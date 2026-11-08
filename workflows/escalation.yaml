@@ -1,0 +1,60 @@
+main:
+  params: [input]
+  steps:
+    - init:
+        assign:
+          - url: ${input.callbackUrl + "/internal/escalation"}
+          - auth: {type: OIDC, audience: '${input.callbackUrl}'}
+    - markFamily:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: stage, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}', stage: family-notified}}
+    - notifyFamily:
+        try:
+          call: http.post
+          args: {url: '${url}', auth: '${auth}', body: {op: notify, householdId: '${input.householdId}', audience: family, severity: '${input.severity}', subject: '${input.subject}', message: '${input.familyMessage}'}}
+        retry: {predicate: '${http.default_retry_predicate}', max_retries: 3, backoff: {initial_delay: 2, max_delay: 30, multiplier: 2}}
+    - waitForFamily:
+        call: sys.sleep
+        args: {seconds: '${input.familyWait}'}
+    - checkFamily:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: ack, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}'}}
+        result: family
+    - familyAnswered:
+        switch:
+          - condition: '${family.body.acknowledged}'
+            next: markResolved
+    - markNeighbour:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: stage, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}', stage: neighbour-notified}}
+    - notifyNeighbour:
+        try:
+          call: http.post
+          args: {url: '${url}', auth: '${auth}', body: {op: notify, householdId: '${input.householdId}', audience: neighbour, severity: high, subject: '${input.subject}', message: '${input.neighbourMessage}'}}
+        retry: {predicate: '${http.default_retry_predicate}', max_retries: 3, backoff: {initial_delay: 2, max_delay: 30, multiplier: 2}}
+    - waitForNeighbour:
+        call: sys.sleep
+        args: {seconds: '${input.neighbourWait}'}
+    - checkNeighbour:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: ack, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}'}}
+        result: neighbour
+    - neighbourAnswered:
+        switch:
+          - condition: '${neighbour.body.acknowledged}'
+            next: markResolved
+    - markEmergency:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: stage, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}', stage: emergency-guidance-sent}}
+    - notifyEmergency:
+        try:
+          call: http.post
+          args: {url: '${url}', auth: '${auth}', body: {op: notify, householdId: '${input.householdId}', audience: everyone, severity: critical, subject: '${input.subject}', message: '${input.emergencyMessage}'}}
+        retry: {predicate: '${http.default_retry_predicate}', max_retries: 5, backoff: {initial_delay: 2, max_delay: 60, multiplier: 2}}
+    - done:
+        return: emergency-guidance-sent
+    - markResolved:
+        call: http.post
+        args: {url: '${url}', auth: '${auth}', body: {op: stage, alertsKey: '${input.alertsKey}', alertId: '${input.alertId}', stage: resolved}}
+    - finished:
+        return: resolved

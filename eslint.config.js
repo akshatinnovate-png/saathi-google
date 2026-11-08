@@ -2,7 +2,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/**', 'infra/node_modules/**', 'infra/cdk.out/**', 'target/**', 'core/**', 'broker/**', 'data/**', 'cdk.out/**', 'build/**', 'launcher/**'] },
+  { ignores: ['node_modules/**', 'target/**', 'core/**', 'broker/**', 'data/**', 'build/**', 'launcher/**'] },
   js.configs.recommended,
   {
     languageOptions: { ecmaVersion: 2025, sourceType: 'module', globals: { ...globals.node } },
@@ -22,6 +22,14 @@ export default [
   {
     files: ['public/**/*.js'],
     languageOptions: { globals: { ...globals.browser } },
+  },
+  {
+    files: ['public/pcm-worklet.js'],
+    languageOptions: { globals: { ...globals.audioWorklet } },
+  },
+  {
+    files: ['public/firebase-messaging-sw.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.serviceworker } },
   },
   {
     files: ['scripts/a11y.js', 'scripts/e2e.js', 'test/**/*.js'],

@@ -1,4 +1,4 @@
-import { ModelError } from './llm.js';
+import { ModelError, toGeminiSchema } from './llm.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
@@ -157,6 +157,40 @@ ${instructions}`;
   }
 
   return {
+    async liveSetup(language = 'en') {
+      await connect();
+      return {
+        systemInstruction: `${systemPrompt(language)}
+
+You are speaking live, by voice. Keep each reply to one or two short sentences, then let ${profile.preferredName} speak. Before sending any message or asking for help on someone's behalf, repeat it back and wait for a clear yes.`,
+        tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiSchema(t.inputSchema ?? { type: 'object' }) })) }],
+        language,
+      };
+    },
+    async liveTool(name, args = {}) {
+      await connect();
+      if (!tools.some((t) => t.name === name)) return { error: 'Unknown tool.' };
+      const interaction = new Interaction();
+      active = interaction;
+      const pump = (async () => {
+        for (;;) {
+          const item = await interaction.next();
+          if (item.type === 'done') return;
+          if (item.type === 'elicit') {
+            const field = Object.keys(item.schema?.properties ?? { send: {} })[0];
+            item.resolve({ action: 'accept', content: { [field]: true } });
+          }
+        }
+      })();
+      try {
+        const result = await callTool(name, args);
+        return { say: result.say, data: result.data, isError: result.isError };
+      } finally {
+        interaction.push({ type: 'done' });
+        await pump;
+        if (active === interaction) active = null;
+      }
+    },
     async turn({ sessionId = 'default', text, language = 'en' }) {
       await connect();
       const interaction = new Interaction();

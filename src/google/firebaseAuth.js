@@ -36,7 +36,7 @@ export function createFirebaseAuth({ apiKey, projectId, publicUrl = null, fetchI
 
   async function verifyIdToken(idToken) {
     const { payload } = await jwtVerify(idToken, keys, { issuer, audience: projectId });
-    return { sub: payload.sub, email: String(payload.email ?? '').toLowerCase(), name: payload.name ?? null, emailVerified: payload.email_verified === true };
+    return { sub: payload.sub, email: String(payload.email ?? '').toLowerCase(), name: payload.name ?? null, emailVerified: payload.email_verified === true, phone: payload.phone_number ?? null };
   }
 
   return {

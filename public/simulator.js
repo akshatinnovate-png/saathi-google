@@ -353,3 +353,33 @@ $('open-assistant').addEventListener('click', async () => {
 
 onEvents(addEvent);
 init();
+
+const LIVE_LABEL = { en: ['Talk live with Saathi', 'Stop talking'], hi: ['साथी से सीधे बात करें', 'बात बंद करें'], mr: ['साथीशी थेट बोला', 'बोलणं थांबवा'] };
+const LIVE_STATE = { connecting: 'Connecting…', listening: 'Listening. Just talk.', speaking: 'Saathi is speaking. You can interrupt.', closed: '', error: 'Live talk stopped. Try again.' };
+(async () => {
+  const btn = $('live-btn');
+  const { liveAvailable, createLiveSession } = await import('./live.js');
+  if (!btn || !(await liveAvailable())) return;
+  btn.hidden = false;
+  let session = null;
+  const labels = () => LIVE_LABEL[settings.language] ?? LIVE_LABEL.en;
+  const sync = () => { $('live-label').textContent = labels()[session ? 1 : 0]; btn.setAttribute('aria-pressed', String(Boolean(session))); };
+  sync();
+  btn.addEventListener('click', async () => {
+    if (session) { session.stop(); session = null; sync(); $('live-status').hidden = true; return; }
+    session = createLiveSession({
+      language: settings.language ?? 'en',
+      onState: (state) => {
+        $('ring').dataset.state = state === 'speaking' ? 'speaking' : state === 'listening' ? 'listening' : 'idle';
+        $('live-status').hidden = !LIVE_STATE[state];
+        $('live-status').textContent = LIVE_STATE[state] ?? '';
+        if (state === 'closed' || state === 'error') { session = null; sync(); }
+      },
+      onYou: (text) => { $('you-said').textContent = text; },
+      onSaathi: (text) => { $('alexa-said').textContent = text; },
+      onTool: (name) => { $('progress').textContent = name.replace(/_/g, ' '); },
+    });
+    sync();
+    try { await session.start(); } catch (err) { $('live-status').hidden = false; $('live-status').textContent = err.message; session?.stop(); session = null; sync(); }
+  });
+})();

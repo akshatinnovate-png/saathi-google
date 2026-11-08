@@ -6,6 +6,7 @@ import { createGoogleAuth } from './google/auth.js';
 import { createGoogleTranslator, createGoogleSentiment, createGoogleSpeech } from './google/language.js';
 import { createPubSubEventBus, createCloudStorageMedia } from './google/platform.js';
 import { createMetrics } from './google/metrics.js';
+import { createWorkflowsEscalation } from './google/workflows.js';
 import { createLocalTranslator, createLocalSentiment, createModelSentiment, createLocalSpeech } from './local/language.js';
 import { createLocalEventBus, createLocalNotifier, createLocalMedia } from './local/platform.js';
 import { createLocalEscalation } from './escalation/localEscalation.js';
@@ -17,7 +18,7 @@ export function createServices(config, overrides = {}) {
   const { google: g, resources, projectId } = config;
   const localBus = overrides.localBus ?? createLocalEventBus();
   const metrics = overrides.metrics ?? createMetrics({ enabled: process.env.SAATHI_METRICS !== 'off' });
-  const needsAuth = g.translate || g.language || g.tts || g.pubsub;
+  const needsAuth = g.translate || g.language || g.tts || g.pubsub || g.workflows || g.speech || g.fcm;
   const auth = overrides.googleAuth ?? (needsAuth ? createGoogleAuth({ projectId }) : null);
 
   const store = overrides.store ?? (g.firestore
@@ -37,9 +38,14 @@ export function createServices(config, overrides = {}) {
 
   const baseNotifier = overrides.notifier ?? createLocalNotifier({ bus: localBus });
   let emailing = null;
+  const hooks = [];
   const notifier = {
     get kind() { return (emailing ?? baseNotifier).kind; },
-    notify: (n) => (emailing ?? baseNotifier).notify(n),
+    async notify(n) {
+      const id = await (emailing ?? baseNotifier).notify(n);
+      for (const hook of hooks) Promise.resolve().then(() => hook(n)).catch((err) => console.error('notify hook failed', err.message));
+      return id;
+    },
     subscribe: (subscription) => baseNotifier.subscribe?.(subscription),
   };
   function attachMail(familyMail) {
@@ -50,7 +56,9 @@ export function createServices(config, overrides = {}) {
     ? createCloudStorageMedia({ bucket: resources.mediaBucket })
     : createLocalMedia({ dir: config.mediaDir ?? fileURLToPath(new URL('../data/media', import.meta.url)), signingKey: overrides.mediaSigningKey ?? null, encryptionKey: overrides.mediaEncryptionKey ?? null, keyring: overrides.keyring ?? null }));
 
-  const escalation = overrides.escalation ?? createLocalEscalation({ store, notifier, bus: localBus, sleep: overrides.sleep });
+  const escalation = overrides.escalation ?? (g.workflows && projectId && config.auth.publicUrl
+    ? createWorkflowsEscalation({ auth, projectId, location: resources.workflowsLocation, workflow: resources.workflowName, callbackUrl: config.auth.publicUrl })
+    : null) ?? createLocalEscalation({ store, notifier, bus: localBus, sleep: overrides.sleep });
 
   localBus.subscribe((event) => {
     if (event['detail-type'] === 'HelpRequested' && (!event.mirrorOnly || events !== localBus)) {
@@ -94,6 +102,7 @@ export function createServices(config, overrides = {}) {
   }
 
   return {
+    onNotify: (hook) => hooks.push(hook),
     saathi, forHousehold, householdIds, sealHouseholds, resetDemo, attachMail, store, translator, sentiment, speech, events, localBus, notifier, media, escalation, metrics,
     describe: () => ({
       store: store.kind, translate: translator.kind, sentiment: sentiment.kind, speech: speech.kind,

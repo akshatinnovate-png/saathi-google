@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.1.0] - 2026-11-08
+
+### For the elder
+- **Gemini Live**: "Talk live with Saathi" on the elder's screen. Aaji just talks, in Marathi, Hindi or English, and can interrupt. Saathi's tools (tablets, messages, help) work mid-conversation, and she is asked before anything is sent. The browser gets a single-use, 30-minute token; the API key never leaves the server.
+
+### For Saathi Didis
+- **Phone sign-in** with Firebase Authentication: no email needed.
+- **SOS** during every visit: the whole family circle gets a critical alert (and a phone notification), and she gets one-tap calls to 112 and her safety contact.
+- **Overdue visits**: if she has not checked out long after the usual time, the family is asked to check and she gets a notification.
+- **She rates families too**, and can stop seeing a family's requests.
+- **Spoken visit notes**: she records in Marathi; Speech-to-Text writes it down; the family reads it in English.
+- **Her Saathi card**: a profile card made with Gemini image generation (or a clean fallback), to share on WhatsApp.
+- **Notifications** for new requests near her (Firebase Cloud Messaging).
+
+### For the family
+- **Phone notifications** for help alerts, missed tablets, Didi visits and SOS, even when the app is closed.
+
+### Underneath
+- **Cloud Workflows** runs help escalations (family, then neighbour, then emergency guidance), calling Saathi back with a Google-signed token that only Saathi's own service account can produce.
+- **Impact dashboard** (`/impact.html`): live totals with no personal details; every care event also streams to **BigQuery** through a Pub/Sub subscription.
+- `npm run deploy -- --demo` publishes a public demo for judges.
+
 ## [2.0.0] - 2026-11-08
 
 Saathi, rebuilt on Google, with Saathi Didis.

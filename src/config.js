@@ -27,6 +27,11 @@ export const config = {
     tts: flag('SAATHI_GOOGLE_TTS', useGoogle),
     pubsub: flag('SAATHI_PUBSUB', useGoogle),
     storage: flag('SAATHI_CLOUD_STORAGE', useGoogle),
+    speech: flag('SAATHI_GOOGLE_SPEECH', useGoogle),
+    fcm: flag('SAATHI_FCM', useGoogle),
+    workflows: flag('SAATHI_WORKFLOWS', false),
+    firebaseWebConfig: (() => { try { return env.SAATHI_FIREBASE_WEB_CONFIG ? JSON.parse(env.SAATHI_FIREBASE_WEB_CONFIG) : null; } catch { return null; } })(),
+    vapidKey: env.SAATHI_FCM_VAPID_KEY || undefined,
     clientId: env.SAATHI_GOOGLE_CLIENT_ID || undefined,
     clientSecret: env.SAATHI_GOOGLE_CLIENT_SECRET || undefined,
     mapsKey: env.SAATHI_MAPS_API_KEY || undefined,
@@ -38,6 +43,9 @@ export const config = {
     firestorePrefix: env.SAATHI_FIRESTORE_PREFIX ?? 'saathi',
     eventTopic: env.SAATHI_PUBSUB_TOPIC ?? 'saathi-events',
     mediaBucket: env.SAATHI_MEDIA_BUCKET ?? '',
+    workflowsLocation: env.SAATHI_WORKFLOWS_LOCATION ?? 'asia-south1',
+    workflowName: env.SAATHI_WORKFLOW ?? 'saathi-escalation',
+    runnerServiceAccount: env.SAATHI_RUNNER_SERVICE_ACCOUNT || undefined,
   },
 
   agent: {
@@ -45,6 +53,9 @@ export const config = {
     vertexLocation: env.SAATHI_VERTEX_LOCATION ?? 'global',
     geminiKey: env.GEMINI_API_KEY || undefined,
     geminiModel: env.SAATHI_GEMINI_MODEL ?? 'gemini-2.5-flash',
+    liveModel: env.SAATHI_LIVE_MODEL ?? 'gemini-live-2.5-flash-preview',
+    live: env.SAATHI_LIVE !== 'off',
+    imageModel: env.SAATHI_IMAGE_MODEL ?? 'gemini-2.5-flash-image',
   },
 
   auth: {
