@@ -44,6 +44,7 @@ export function toGeminiContents(messages) {
     const parts = [];
     for (const b of blocks) {
       if (b.type === 'text' && b.text) parts.push({ text: b.text });
+      else if (b.type === 'media' && b.data) parts.push({ inlineData: { mimeType: b.mimeType, data: b.data } });
       else if (b.type === 'tool_use') {
         names.set(b.id, b.name);
         parts.push({ functionCall: { name: b.name, args: b.input ?? {} }, ...(b.signature ? { thoughtSignature: b.signature } : {}) });
@@ -75,12 +76,12 @@ export function fromGeminiCandidate(candidate, promptFeedback) {
 }
 
 export function createGeminiClient({ apiKey = null, model, fetchImpl = fetch, timeoutMs = 30_000, base = GEMINI_BASE, authHeaders = null }) {
-  return async function create({ system, tools, messages, max_tokens: maxTokens = 2048 }) {
+  return async function create({ system, tools, messages, max_tokens: maxTokens = 2048, json = false }) {
     const body = {
       contents: toGeminiContents(messages),
       ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
       ...(tools?.length ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: toGeminiSchema(t.input_schema ?? { type: 'object' }) })) }], toolConfig: { functionCallingConfig: { mode: 'AUTO' } } } : {}),
-      generationConfig: { maxOutputTokens: maxTokens, temperature: 0.3 },
+      generationConfig: { maxOutputTokens: maxTokens, temperature: json ? 0.1 : 0.3, ...(json ? { responseMimeType: 'application/json' } : {}) },
     };
     let res;
     try {
@@ -93,9 +94,9 @@ export function createGeminiClient({ apiKey = null, model, fetchImpl = fetch, ti
     } catch (err) {
       throw new ModelError(`Gemini could not be reached: ${err.message}`, { cause: err });
     }
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new ModelError(json.error?.message ?? `Gemini answered ${res.status}`, { status: res.status });
-    return fromGeminiCandidate(json.candidates?.[0], json.promptFeedback);
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ModelError(out.error?.message ?? `Gemini answered ${res.status}`, { status: res.status });
+    return fromGeminiCandidate(out.candidates?.[0], out.promptFeedback);
   };
 }
 
@@ -136,5 +137,19 @@ export function withHelpers({ provider, model, create }) {
     return { sentiment: json.sentiment, scores: { positive: n(json.positive), negative: n(json.negative), neutral: n(json.neutral), mixed: n(json.mixed) } };
   }
 
-  return { provider, model, create, translate, mood };
+  async function understand({ system, prompt, media = [], maxTokens = 2048 }) {
+    const response = await create({
+      system, json: true, max_tokens: maxTokens,
+      messages: [{ role: 'user', content: [...media.map((m) => ({ type: 'media', mimeType: m.mimeType, data: m.data })), { type: 'text', text: prompt }] }],
+    });
+    if (response.stop_reason === 'refusal') return null;
+    const raw = response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+    try {
+      return JSON.parse(raw.slice(raw.search(/[[{]/), Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']')) + 1));
+    } catch {
+      return null;
+    }
+  }
+
+  return { provider, model, create, translate, mood, understand };
 }

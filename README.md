@@ -15,7 +15,7 @@ Saathi keeps an elder safe, independent and close to family, in their own langua
 
 | Google | What it does in Saathi | Code |
 |---|---|---|
-| **Gemini** (Gemini API or **Vertex AI**) | Understands the elder in Marathi, Hindi or English and picks Saathi's tools; runs the family assistant; writes Didi briefings in the Didi's language | `src/agent/llm.js` |
+| **Gemini** (Gemini API or **Vertex AI**) | Understands the elder in Marathi, Hindi or English and picks Saathi's tools; runs the family assistant; writes Didi briefings in the Didi's language; reads prescriptions and letters, and summarises doctor visits from audio | `src/agent/llm.js`, `src/features/` |
 | **Cloud Run** | Runs everything: the family, elder and Didi apps, MCP, webhooks, reminders and escalations | `scripts/deploy-cloud-run.js`, `Dockerfile` |
 | **Firestore** | Every household, booking and Didi, with transactional updates | `src/google/firestore.js` |
 | **Cloud Translation** | Messages, stories, check-ins and Didi visit notes, both ways | `src/google/language.js` |
@@ -23,7 +23,8 @@ Saathi keeps an elder safe, independent and close to family, in their own langua
 | **Text-to-Speech** | Real Marathi, Hindi, Tamil and Bengali voices, slower for hearing loss | `src/google/language.js` |
 | **Pub/Sub** | The stream of care events (help, doses, Didi arrivals) | `src/google/platform.js` |
 | **Cloud Storage** | Voice notes and Family Voice reminders, with short-lived signed links | `src/google/platform.js` |
-| **Google Maps** (Routes API) | Matches families with Didis by real travel time | `src/google/maps.js`, `src/didis/didis.js` |
+| **Google Maps** (Routes API) | Matches families with Didis by real travel time; a map link in a Raksha alert | `src/google/maps.js`, `src/didis/didis.js` |
+| **Google Meet** | Saathi Sangat circles, joined with one button | `src/features/sangat.js` |
 | **Firebase Authentication** | Email and password accounts; Didis sign in with just their phone number | `src/google/firebaseAuth.js`, `public/firebase-web.js` |
 | **Gemini Live** | Aaji just talks, in Marathi, and can interrupt; Saathi's tools work mid-conversation | `src/google/live.js`, `public/live.js` |
 | **Gemini image generation** | A Didi's profile card to share on WhatsApp | `src/google/image.js` |
@@ -68,6 +69,14 @@ For a public demo that judges can open (the fictional Deshpande family, resettin
 
 The script enables the APIs and creates the Firestore database, a private media bucket, the Pub/Sub topic and a service account with only the roles Saathi needs. It also creates a BigQuery dataset fed by a Pub/Sub subscription, and the Cloud Workflows escalation. It then deploys to Cloud Run with Gemini on Vertex AI. Add `--dry-run` to see every command first. When it prints the service address, set `SAATHI_PUBLIC_URL` to it and run the command once more.
 
+## New in 1.1.0
+
+- **Saathi Scan:** photograph a prescription or tablet strip; Gemini fills in the tablet list (it understands "1-0-1", BD, HS) and warns about duplicates and risky pairs. The family checks it before anything is saved.
+- **Saathi Haq:** the pension life certificate, Ayushman Vay Vandana, the old-age pension and state schemes she is entitled to, with reminders. Aaji can ask "What does this letter say?" and hear it explained in her language, with scams flagged.
+- **Saathi Raksha:** the Android app notices a likely fall or long stillness and asks Aaji if she is all right; no answer in 45 seconds starts the help escalation, with her location.
+- **Saathi Sangat:** small Google Meet circles hosted by a Saathi Didi, in the elder's language, with a reminder and a one-tap join. Families pay the host by UPI.
+- **Doctor Notes:** with consent, record the doctor's advice; Gemini summarises it, Aaji hears it in her language, and one tap applies the tablet changes and the next visit.
+
 ## Saathi Didis
 
 - **For her:** she signs up at `/didi.html` in Marathi, Hindi or English, sets her own fee for each kind of help, and adds her UPI ID. A partner code from her self-help group or NGO verifies her, and three short lessons (helping someone stand, missed doses, scam calls) make her ready. Then she accepts requests near her, reads a briefing in her language, checks in, leaves a note and sees what she earned.
@@ -84,7 +93,7 @@ Tablets by colour and purpose, with no double doses. Proactive reminders. Family
 ## Tests and checks
 
 ```sh
-npm test          # 190+ tests, offline
+npm test          # 200+ tests, offline
 npm run coverage  # at least 90% of lines and 80% of branches
 npm run lint
 npm run a11y      # axe-core across every screen, including the Didi app

@@ -28,6 +28,11 @@ import { createGeminiImage } from './google/image.js';
 import { createOidcVerifier } from './google/oidc.js';
 import { createPush } from './push/push.js';
 import { createImpact } from './domain/impact.js';
+import { createScan } from './features/scan.js';
+import { createDoctorNotes } from './features/doctorNotes.js';
+import { createHaq } from './features/haq.js';
+import { createSangat } from './features/sangat.js';
+import { createRaksha } from './features/raksha.js';
 import { createSessions, sessionSecret } from './accounts/sessions.js';
 import { createGoogle, createVault } from './accounts/google.js';
 import { createMailer } from './mail/mailer.js';
@@ -190,12 +195,17 @@ const didiEvents = async (type, payload) => {
   if (type === 'sos') console.warn(`  SOS from Saathi Didi ${payload.didi.id} during booking ${payload.bookingId}`);
 };
 const didis = createDidis({ store: services.store, services, translator: services.translator, llm, images, onEvent: didiEvents, maps: createMaps({ apiKey: config.google.mapsKey }), partnerCodes: (process.env.SAATHI_DIDI_PARTNER_CODES ?? '').split(',') });
+const scan = createScan({ llm, services });
+const doctorNotes = createDoctorNotes({ llm, services, translator: services.translator });
+const haq = createHaq({ llm, services, translator: services.translator });
+const sangat = createSangat({ store: services.store, services, llm });
+const raksha = createRaksha({ services });
 const impact = createImpact({ services, store: services.store, includeDemo: config.demo });
 const internalVerify = config.google.workflows && config.auth.publicUrl && config.resources.runnerServiceAccount
   ? createOidcVerifier({ audience: config.auth.publicUrl, serviceAccount: config.resources.runnerServiceAccount })
   : null;
 const webConfig = { firebase: config.google.firebaseWebConfig, vapidKey: config.google.vapidKey };
-const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis, live, push, impact, stt, firebase, internalVerify, webConfig });
+const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis, live, push, impact, stt, firebase, internalVerify, webConfig, scan, doctorNotes, haq, sangat, raksha });
 
 doorbell.startAll().catch((err) => console.error('Ring listeners failed to start:', err.message));
 
@@ -238,6 +248,8 @@ setInterval(async () => {
   }
   await calls.sweep(await services.householdIds()).catch((err) => console.error('calls sweep failed', err));
   await didis.sweepOverdue().catch((err) => console.error('Didi overdue sweep failed', err));
+  await sangat.sweep().catch((err) => console.error('Sangat reminders failed', err));
+  for (const householdId of await services.householdIds()) await raksha.sweep(householdId).catch((err) => console.error(`raksha sweep failed for ${householdId}`, err));
 }, 60 * 1000).unref();
 
 setInterval(async () => {
@@ -250,6 +262,7 @@ setInterval(async () => {
       await saathi.sweepAppointments();
       await saathi.sweepWeeklyLetter();
       await saathi.sweepScamWarnings(scamNetwork.warnings);
+      await haq.sweep(householdId);
     } catch (err) {
       console.error(`sweep failed for ${householdId}`, err);
     }
