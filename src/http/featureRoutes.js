@@ -12,7 +12,7 @@ export function mountFamilyFeatures(api, { scan, doctorNotes, haq, sangat, raksh
       if (!feature) return res.status(404).json({ error: 'This part of Saathi is not set up here.' });
       res.json(await fn(req));
     } catch (err) {
-      if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+      if (err.status && (err.status < 500 || err.status === 503)) return res.status(err.status).json({ error: err.message });
       next(err);
     }
   };
@@ -72,7 +72,7 @@ export function mountFamilyFeatures(api, { scan, doctorNotes, haq, sangat, raksh
 export function mountDidiFeatures(router, { didis, doctorNotes, sangat }) {
   const send = (fn) => async (req, res, next) => {
     try { res.json(await fn(req)); } catch (err) {
-      if (err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+      if (err.status && (err.status < 500 || err.status === 503)) return res.status(err.status).json({ error: err.message });
       next(err);
     }
   };
