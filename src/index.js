@@ -21,6 +21,13 @@ import { createAccounts } from './accounts/accounts.js';
 import { createFirebaseAuth } from './google/firebaseAuth.js';
 import { createMaps } from './google/maps.js';
 import { createGoogleAuth } from './google/auth.js';
+import { createFcm } from './google/fcm.js';
+import { createSpeechToText } from './google/speech.js';
+import { createLiveTokens } from './google/live.js';
+import { createGeminiImage } from './google/image.js';
+import { createOidcVerifier } from './google/oidc.js';
+import { createPush } from './push/push.js';
+import { createImpact } from './domain/impact.js';
 import { createSessions, sessionSecret } from './accounts/sessions.js';
 import { createGoogle, createVault } from './accounts/google.js';
 import { createMailer } from './mail/mailer.js';
@@ -171,8 +178,24 @@ const guide = createGuide({
     return out.proposals?.length || out.sahayTask ? 'In the family app, I can do that for you after you sign in.' : out.reply;
   } : null,
 });
-const didis = createDidis({ store: services.store, services, translator: services.translator, llm, maps: createMaps({ apiKey: config.google.mapsKey }), partnerCodes: (process.env.SAATHI_DIDI_PARTNER_CODES ?? '').split(',') });
-const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis });
+const cloudAuth = (config.google.speech || config.google.fcm) ? createGoogleAuth({ projectId: config.projectId }) : null;
+const push = createPush({ store: services.store, fcm: config.google.fcm ? createFcm({ auth: cloudAuth, projectId: config.projectId }) : null });
+if (push.enabled) services.onNotify((n) => push.toHousehold(n));
+const stt = config.google.speech ? createSpeechToText({ auth: cloudAuth }) : null;
+const live = config.agent.live ? createLiveTokens({ apiKey: config.agent.geminiKey, model: config.agent.liveModel }) : null;
+const images = createGeminiImage({ apiKey: config.agent.geminiKey, model: config.agent.imageModel });
+const didiEvents = async (type, payload) => {
+  if (type === 'offer') await push.toDidis(payload.didiIds, { title: 'A new Saathi request near you', body: `${payload.booking.kindName}, ${String(payload.booking.at).replace('T', ' ')}${payload.booking.fee ? `, ₹${payload.booking.fee}` : ''}`, tag: payload.booking.id });
+  if (type === 'overdue') await push.toDidis(payload.didiIds, { title: 'Are you all right?', body: 'Your visit is taking longer than usual. Check out when you finish, or press SOS if you need help.', urgent: true, tag: payload.bookingId });
+  if (type === 'sos') console.warn(`  SOS from Saathi Didi ${payload.didi.id} during booking ${payload.bookingId}`);
+};
+const didis = createDidis({ store: services.store, services, translator: services.translator, llm, images, onEvent: didiEvents, maps: createMaps({ apiKey: config.google.mapsKey }), partnerCodes: (process.env.SAATHI_DIDI_PARTNER_CODES ?? '').split(',') });
+const impact = createImpact({ services, store: services.store, includeDemo: config.demo });
+const internalVerify = config.google.workflows && config.auth.publicUrl && config.resources.runnerServiceAccount
+  ? createOidcVerifier({ audience: config.auth.publicUrl, serviceAccount: config.resources.runnerServiceAccount })
+  : null;
+const webConfig = { firebase: config.google.firebaseWebConfig, vapidKey: config.google.vapidKey };
+const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis, live, push, impact, stt, firebase, internalVerify, webConfig });
 
 doorbell.startAll().catch((err) => console.error('Ring listeners failed to start:', err.message));
 
@@ -214,6 +237,7 @@ setInterval(async () => {
     }
   }
   await calls.sweep(await services.householdIds()).catch((err) => console.error('calls sweep failed', err));
+  await didis.sweepOverdue().catch((err) => console.error('Didi overdue sweep failed', err));
 }, 60 * 1000).unref();
 
 setInterval(async () => {

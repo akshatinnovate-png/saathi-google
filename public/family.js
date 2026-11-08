@@ -3,6 +3,7 @@ import { api, loadSettings, saveSettings, applyDisplay, bindToggle, onEvents, el
 import { icon, iconEl } from './icons.js';
 import { setupSecurity, setupPairApprovals } from './security.js';
 import { createPrivate } from './private.js';
+import { webConfig, enablePush } from './firebase-web.js';
 
 const settings = loadSettings({ member: 'riya', large: false, contrast: false });
 applyDisplay(settings);
@@ -1085,3 +1086,21 @@ document.getElementById('didi-form')?.addEventListener('submit', async (e) => {
   loadDidis();
 });
 loadDidis();
+
+(async () => {
+  const card = document.getElementById('push-card');
+  if (!card || !(await webConfig()).push) return;
+  card.hidden = false;
+  document.getElementById('push-on').addEventListener('click', async () => {
+    const status = document.getElementById('push-status');
+    try {
+      await enablePush(async (token) => {
+        const res = await fetch('/api/push/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Could not turn on notifications.');
+      });
+      status.textContent = 'Notifications are on for this phone.';
+    } catch (err) {
+      status.textContent = err.message;
+    }
+  });
+})();

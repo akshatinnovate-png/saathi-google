@@ -1,8 +1,8 @@
 # Changelog
 
-## [2.0.0] - 2026-11-08
+## [1.0.0] - 2026-11-08
 
-Saathi, rebuilt on Google, with Saathi Didis.
+**Saathi on Google 1.0.0 is Saathi 1.4.0 (with Sahay) plus Saathi Didis, rebuilt on Google.** Every feature of Saathi 1.4.0 carries over: Scam Guard with Sahay on Windows and Android, the Scam Shield Network, Saathi Insight and the doctor report, Family Voice, Living Legacy, Saathi Calls, the assistant that acts, passkeys, end-to-end encrypted private messages and the audit log.
 
 ### On Google
 - **Gemini** is Saathi's brain: the voice companion, the family assistant and the Didi briefings, through the Gemini API (free key) or **Vertex AI** with the service account. Saathi's MCP tools are turned into Gemini function calls, and thought signatures are kept across turns.
@@ -19,4 +19,22 @@ Saathi, rebuilt on Google, with Saathi Didis.
 - The family books from the care view. The Didi accepts, reads a Gemini-written briefing in her language (only what the family shares), checks in and leaves a note. The elder and the family are told at each step, and the note reaches the family in English.
 - The family pays the Didi directly with a UPI link and rates the visit; she sees her visits, earnings and rating.
 
-Everything from Saathi 1.4 carries over: Scam Guard, the Scam Shield Network, Saathi Insight, Family Voice, Living Legacy, Saathi Calls, the assistant that acts, passkeys and the audit log.
+### For the elder
+- **Gemini Live**: "Talk live with Saathi" on the elder's screen. Aaji just talks, in Marathi, Hindi or English, and can interrupt. Saathi's tools (tablets, messages, help) work mid-conversation, and she is asked before anything is sent. The browser gets a single-use, 30-minute token; the API key never leaves the server.
+
+### Didi safety and growth
+- **Phone sign-in** with Firebase Authentication: no email needed.
+- **SOS** during every visit: the whole family circle gets a critical alert (and a phone notification), and she gets one-tap calls to 112 and her safety contact.
+- **Overdue visits**: if she has not checked out long after the usual time, the family is asked to check and she gets a notification.
+- **She rates families too**, and can stop seeing a family's requests.
+- **Spoken visit notes**: she records in Marathi; Speech-to-Text writes it down; the family reads it in English.
+- **Her Saathi card**: a profile card made with Gemini image generation (or a clean fallback), to share on WhatsApp.
+- **Notifications** for new requests near her (Firebase Cloud Messaging).
+
+### For the family
+- **Phone notifications** for help alerts, missed tablets, Didi visits and SOS, even when the app is closed.
+
+### Underneath
+- **Cloud Workflows** runs help escalations (family, then neighbour, then emergency guidance), calling Saathi back with a Google-signed token that only Saathi's own service account can produce.
+- **Impact dashboard** (`/impact.html`): live totals with no personal details; every care event also streams to **BigQuery** through a Pub/Sub subscription.
+- `npm run deploy -- --demo` publishes a public demo for judges.

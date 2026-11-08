@@ -324,16 +324,15 @@ Saathi Didis already works end to end, on Google:
 - The family pays her directly with a UPI link and rates the visit; she sees her visits, earnings and rating.
 - All of Saathi runs on Google: Gemini (API or Vertex AI), Firestore, Cloud Translation, Natural Language, Text-to-Speech, Pub/Sub, Cloud Storage, Maps and Firebase Authentication, deployed to Cloud Run with one command.
 
-### At the City Buildathon (20-21 November): make it delightful
-**Day 1: reach and voice**
-- Didi sign-in with just a phone number (Firebase Authentication phone sign-in).
-- The three lessons by voice with Gemini Live, in her language.
-- Booking offers as phone notifications (Firebase Cloud Messaging).
+### Also built already
+- **Gemini Live** for Aaji, by voice, in Marathi, with Saathi's tools working mid-conversation.
+- **Didi safety**: SOS with one-tap calls to 112 and her safety contact, overdue-visit checks, and Didis rating families.
+- **Phone-number sign-in** for Didis, **spoken visit notes** (Speech-to-Text), **phone notifications** (Firebase Cloud Messaging) and a **Didi profile card** made with Gemini image generation.
+- **Help escalations on Cloud Workflows**, and a live **impact dashboard** backed by BigQuery.
 
-**Day 2: the visit and the proof**
-- A spoken visit note in Marathi, transcribed (Speech-to-Text) and read by the family in English.
-- The escalation on Cloud Workflows, so help survives any restart.
-- A Didi profile card for WhatsApp, made with Gemini image generation.
+### At the City Buildathon (20-21 November): grow it with real Didis
+**Day 1:** onboard the partner's first caregivers as Didis on their own phones; record their lessons by voice with Gemini Live; tune briefings and translations on real visits.
+**Day 2:** run real bookings end to end; show the impact dashboard filling up live; add Cloud KMS keys of the family's own and Gemini Nano scam detection on Android.
 
 ### Regional Showcase (23, 25, 27 November)
 Bring numbers from the first real bookings with the partner's caregivers, and the family and caregiver quotes.
@@ -354,7 +353,7 @@ Show the full loop on stage, plus Saathi's existing features running on Google: 
 
 Each feature below says **what it does for people** and **the Google products behind it**. Features 1 to 31 are in Saathi today; 32 to 39 are Saathi Didis, the new product, which already works end to end.
 
-**What runs on Google today, and what comes next.** "On Google" below is the full design. In the code today, Saathi runs on **Cloud Run** with **Gemini** (Gemini API or Vertex AI), **Firestore**, **Cloud Translation**, **Natural Language**, **Text-to-Speech**, **Pub/Sub**, **Cloud Storage**, **Google Maps (Routes API)**, **Firebase Authentication**, **Google sign-in**, the **Gmail API**, **Secret Manager** and **Cloud Logging**. Gemini Live, Gemini Nano, Speech-to-Text (Chirp), Firebase Cloud Messaging, Cloud Workflows, Cloud KMS, Nano Banana, Lyria, Dialogflow CX, BigQuery and Remote Config are the next steps in section 14.
+**What runs on Google today, and what comes next.** "On Google" below is the full design. In the code today, Saathi runs on **Cloud Run** with **Gemini** (Gemini API or Vertex AI), **Gemini Live**, **Gemini image generation**, **Firestore**, **Cloud Translation**, **Natural Language**, **Text-to-Speech**, **Speech-to-Text**, **Pub/Sub**, **BigQuery**, **Cloud Workflows**, **Cloud Storage**, **Google Maps (Routes API)**, **Firebase Authentication** (including phone sign-in), **Firebase Cloud Messaging**, **Google sign-in**, the **Gmail API**, **Secret Manager** and **Cloud Logging**. Gemini Nano, Cloud KMS, Lyria, Dialogflow CX and Remote Config are the next steps.
 
 Kamala ("Aaji") is the elder, Riya her granddaughter in Toronto, Anand her son in Bengaluru, Meera the neighbour, and Sunita a Saathi Didi.
 

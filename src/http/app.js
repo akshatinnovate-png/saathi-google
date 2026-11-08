@@ -10,6 +10,7 @@ import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprot
 import { mountMcp } from './mcpRoute.js';
 import { mountAuth } from './authRoutes.js';
 import { mountDidis, mountFamilyDidis } from './didiRoutes.js';
+import { mountInternal } from './internalRoutes.js';
 import { apiGuard, mayDo } from './guard.js';
 import { onThisComputer } from '../agent/sahayQueue.js';
 import { isTechHelp, languageOf, askedSahay, instructionFor } from '../agent/techHelp.js';
@@ -21,7 +22,7 @@ import { createReplayGuard, verifySignature, normaliseRingEvent, SIGNATURE_HEADE
 
 const PROTECTED_PAGES = ['/legacy.html', '/doctor-report.html', '/scam-guard.html', '/family.html', '/alexa.html', '/welcome.html', '/scan.html', '/medical-id.html'];
 
-export function createApp({ config, services, simulatorFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, assistantFor, google, familyMail, doorbell, security = null, audit = null, keyring = null, vault = null, sahayQueue = null, guide = null, scamNetwork = null, billing = null, calls = null, didis = null }) {
+export function createApp({ config, services, simulatorFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, assistantFor, google, familyMail, doorbell, security = null, audit = null, keyring = null, vault = null, sahayQueue = null, guide = null, scamNetwork = null, billing = null, calls = null, didis = null, live = null, push = null, impact = null, stt = null, firebase = null, internalVerify = null, webConfig = {} }) {
   const { localBus, store } = services;
   const app = express();
   app.set('trust proxy', config.web?.trustProxy ?? 'loopback');
@@ -31,6 +32,7 @@ export function createApp({ config, services, simulatorFor, verifier, optionalVe
     publicDir: fileURLToPath(new URL('../../public', import.meta.url)),
     https: Boolean(publicUrl?.startsWith('https://')),
     mediaHosts: config.google?.storage ? ['https://storage.googleapis.com'] : [],
+    googleWeb: Boolean(webConfig.firebase || live),
   }));
   const limiter = createRateLimiter();
   if (config.web?.rateLimit !== false) app.use(limiter.middleware(config.web?.rateRules ?? RATE_RULES));
@@ -144,7 +146,16 @@ export function createApp({ config, services, simulatorFor, verifier, optionalVe
     } catch (err) { next(err); }
   });
 
-  if (didis) mountDidis(app, { didis, config });
+  if (didis) mountDidis(app, { didis, config, firebase, stt, push, webConfig });
+  if (internalVerify) mountInternal(app, { verify: internalVerify, store, notifier: services.notifier, bus: services.events });
+  const publicLimit = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false });
+  app.get('/web-config', publicLimit, (_req, res) => res.json({ firebase: webConfig.firebase ?? null, vapidKey: webConfig.vapidKey ?? null, push: Boolean(push?.enabled && webConfig.firebase && webConfig.vapidKey), live: Boolean(live) }));
+  app.get('/impact-api', publicLimit, async (_req, res, next) => {
+    try {
+      if (!impact) return res.status(404).json({ error: 'Not found.' });
+      res.set('Cache-Control', 'public, max-age=60').json(await impact.get());
+    } catch (err) { next(err); }
+  });
 
   const guard = apiGuard({ requireLogin, defaultHousehold: DEFAULT_HOUSEHOLD, services, audit });
   if (accounts && sessions) mountAuth(app, { config, accounts, sessions, security, google, familyMail, audit, guard });
@@ -356,6 +367,34 @@ export function createApp({ config, services, simulatorFor, verifier, optionalVe
     const { text, language = 'en', sessionId = 'device-1' } = req.body ?? {};
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
     res.json(await (await simulatorFor(req.householdId)).turn({ sessionId, text: text.trim(), language }));
+  }));
+
+  api.get('/live/session', wrap(async (req, res) => {
+    if (!live || !simulatorFor) return res.status(404).json({ error: 'Gemini Live is not set up on this Saathi.' });
+    const setup = await (await simulatorFor(req.householdId)).liveSetup(String(req.query.language ?? 'en'));
+    try {
+      res.json({ ...(await live.mint()), ...setup });
+    } catch (err) {
+      res.status(err.status ?? 503).json({ error: err.message });
+    }
+  }));
+
+  api.post('/live/tool', wrap(async (req, res) => {
+    if (!live || !simulatorFor) return res.status(404).json({ error: 'Gemini Live is not set up on this Saathi.' });
+    const name = String(req.body?.name ?? '');
+    const args = req.body?.args && typeof req.body.args === 'object' ? req.body.args : {};
+    res.json(await (await simulatorFor(req.householdId)).liveTool(name, args));
+  }));
+
+  api.post('/push/register', wrap(async (req, res) => {
+    if (!push?.enabled) return res.status(400).json({ error: 'Notifications are not set up on this Saathi.' });
+    const member = memberOf(req);
+    const role = req.role === 'owner' ? 'owner' : req.role === 'neighbour' ? 'neighbour' : 'family';
+    try {
+      res.json(await push.register({ token: req.body?.token, householdId: req.householdId, memberId: member, role }));
+    } catch (err) {
+      res.status(err.status ?? 400).json({ error: err.message });
+    }
   }));
 
   api.post('/alexa/answer', wrap(async (req, res) => {

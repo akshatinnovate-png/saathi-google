@@ -13,26 +13,25 @@ export function inlineScriptHashes(publicDir) {
   return [...hashes].sort();
 }
 
-export function contentSecurityPolicy({ scriptHashes = [], https = false, mediaHosts = [] } = {}) {
+export function contentSecurityPolicy({ scriptHashes = [], https = false, mediaHosts = [], googleWeb = false } = {}) {
   const directives = {
     'default-src': ["'self'"],
-    'script-src': ["'self'", ...scriptHashes],
+    'script-src': ["'self'", ...scriptHashes, ...(googleWeb ? ['https://www.gstatic.com', 'https://www.google.com', 'https://apis.google.com'] : [])],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'"],
     'style-src-attr': ["'none'"],
     'font-src': ["'self'"],
     'img-src': ["'self'", 'data:', 'blob:'],
     'media-src': ["'self'", 'blob:', ...mediaHosts],
-    'connect-src': ["'self'"],
+    'connect-src': ["'self'", ...(googleWeb ? ['https://*.googleapis.com', 'wss://generativelanguage.googleapis.com', 'https://www.google.com'] : [])],
     'worker-src': ["'self'"],
     'manifest-src': ["'self'"],
-    'frame-src': ["'none'"],
+    'frame-src': googleWeb ? ['https://www.google.com', 'https://recaptcha.google.com', 'https://*.firebaseapp.com'] : ["'none'"],
     'frame-ancestors': ["'none'"],
     'object-src': ["'none'"],
     'base-uri': ["'none'"],
     'form-action': ["'self'"],
-    'require-trusted-types-for': ["'script'"],
-    'trusted-types': ['saathi'],
+    ...(googleWeb ? {} : { 'require-trusted-types-for': ["'script'"], 'trusted-types': ['saathi'] }),
   };
   const policy = Object.entries(directives).map(([k, v]) => `${k} ${v.join(' ')}`);
   if (https) policy.push('upgrade-insecure-requests');
@@ -45,11 +44,15 @@ export const PERMISSIONS_POLICY = [
   'display-capture=()', 'idle-detection=()', 'interest-cohort=()', 'browsing-topics=()',
 ].join(', ');
 
-export function securityHeaders({ publicDir, https = false, mediaHosts = [] }) {
-  const csp = contentSecurityPolicy({ scriptHashes: inlineScriptHashes(publicDir), https, mediaHosts });
+export const GOOGLE_WEB_PAGES = ['/didi.html', '/family.html', '/alexa.html', '/firebase-messaging-sw.js'];
+
+export function securityHeaders({ publicDir, https = false, mediaHosts = [], googleWeb = false }) {
+  const hashes = inlineScriptHashes(publicDir);
+  const strict = contentSecurityPolicy({ scriptHashes: hashes, https, mediaHosts });
+  const google = googleWeb ? contentSecurityPolicy({ scriptHashes: hashes, https, mediaHosts, googleWeb: true }) : strict;
   return (req, res, next) => {
     res.set({
-      'Content-Security-Policy': csp,
+      'Content-Security-Policy': GOOGLE_WEB_PAGES.includes(req.path) ? google : strict,
       'Permissions-Policy': PERMISSIONS_POLICY,
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
