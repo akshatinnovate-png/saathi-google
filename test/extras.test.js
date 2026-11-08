@@ -228,8 +228,8 @@ test('the strict page policy relaxes only for Google sign-in, notifications and 
   assert.match(strict, /connect-src 'self';/);
   const google = contentSecurityPolicy({ googleWeb: true });
   assert.doesNotMatch(google, /trusted-types/);
-  assert.match(google, /wss:\/\/generativelanguage\.googleapis\.com/);
-  assert.match(google, /script-src 'self' https:\/\/www\.gstatic\.com/);
+  assert.ok(google.includes("connect-src 'self' https://*.googleapis.com wss://generativelanguage.googleapis.com"));
+  assert.ok(google.includes("script-src 'self' https://www.gstatic.com"));
 });
 
 let server;
