@@ -222,6 +222,9 @@ The full list, feature by feature, is in section 15.
 | The doorbell, announced (Ring or Google Nest) | Family Voice reminders | |
 | Her stories, saved and narrated | Living Legacy: her stories as a book | |
 | Where she keeps her glasses | A Medical ID card for emergencies | |
+| "Are you all right?" after a fall (Raksha) | Prescriptions read from a photo (Scan) | Hosting a paid circle on Meet (Sangat) |
+| Circles on Google Meet in her language (Sangat) | Her rights and pension reminders (Haq) | Recording the doctor's advice on an escort (Doctor Notes) |
+| "What does this letter say?" (Haq) | The doctor's advice, summarised (Doctor Notes) | |
 
 ---
 
@@ -329,6 +332,11 @@ Saathi Didis already works end to end, on Google:
 - **Didi safety**: SOS with one-tap calls to 112 and her safety contact, overdue-visit checks, and Didis rating families.
 - **Phone-number sign-in** for Didis, **spoken visit notes** (Speech-to-Text), **phone notifications** (Firebase Cloud Messaging) and a **Didi profile card** made with Gemini image generation.
 - **Help escalations on Cloud Workflows**, and a live **impact dashboard** backed by BigQuery.
+- **Saathi Scan**: Gemini reads a prescription or tablet strip, understands Indian dosing notes, and warns about duplicates and risky pairs before the family saves it.
+- **Saathi Haq**: her pension life certificate, Ayushman Vay Vandana and other schemes, with reminders; and "What does this letter say?" for Aaji, with scams flagged.
+- **Saathi Raksha**: fall and stillness checks on Android; no answer in 45 seconds starts the help escalation with her location.
+- **Saathi Sangat**: Google Meet circles hosted by a Didi, a new monthly income for her and company for Aaji.
+- **Doctor Notes**: with consent, the doctor's advice recorded, summarised by Gemini, heard by Aaji in her language and applied in one tap.
 
 ### At the City Buildathon (20-21 November): grow it with real Didis
 **Day 1:** onboard the partner's first caregivers as Didis on their own phones; record their lessons by voice with Gemini Live; tune briefings and translations on real visits.

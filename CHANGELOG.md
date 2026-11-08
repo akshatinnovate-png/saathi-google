@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.1.0] - 2026-11-08
+
+Five new features, each built on Google and each tested.
+
+### Saathi Scan
+- The family photographs a prescription or a strip of tablets. **Gemini** reads it, including Indian dosing notes such as "1-0-1", OD, BD, TDS, HS, before food and after food, and fills in the tablet list for the family to check before anything is saved.
+- Saathi warns about a tablet she already takes under another name, and about a short, careful list of well-known risky pairs (warfarin with painkillers, two painkillers together, and others). It never says a combination is safe.
+
+### Saathi Haq (her rights)
+- From her year of birth, pension and cards, Saathi lists what she is entitled to: the yearly pension life certificate (Jeevan Pramaan, from 1 October for those 80 and over), Ayushman Vay Vandana at 70, the national old-age pension, and Maharashtra's Shravanbal scheme.
+- The family is reminded weekly while the life certificate is due, and can book a Didi to help with it.
+- **"What does this letter say?"**: Aaji photographs an official letter or message; Gemini explains it plainly in her language and says when it looks like a scam, which goes to Scam Shield.
+
+### Saathi Raksha (fall and stillness checks)
+- The Android app notices a likely fall from the phone's motion sensor (a free fall, an impact, then stillness) and, if the family turns it on, long stillness during the day.
+- Aaji is asked "Are you all right?" on her screen and in a notification. If she does not answer in 45 seconds, or asks for help, the help escalation starts, with her location when shared.
+
+### Saathi Sangat (circles)
+- A ready Saathi Didi can host a small circle (3 to 10 elders) on **Google Meet**, in their language, at a set time, for a monthly fee paid to her by UPI.
+- Families find circles in Aaji's city and language and join. Aaji gets a reminder ten minutes before and joins with one button; the family hears she attended. Gemini suggests topics for the host.
+
+### Doctor Notes
+- With the doctor's consent, the family or the escorting Didi records the advice at the end of a visit. Gemini listens and writes a short summary: what changed, tablets to start or stop, tests, warning signs and the next visit.
+- Aaji hears it in her language and the family reads it in theirs. One tap applies the tablet changes and the next appointment. Notes are kept with her other health records under the sealed health-data plan.
+
+### Underneath
+- Gemini now reads photos and audio directly and answers in JSON mode.
+- Photo and audio uploads have their own size limits and an hourly rate limit, separate from the 1 MB JSON limit.
+- New accessibility scenarios for the family cards and the Raksha check.
+
 ## [1.0.0] - 2026-11-08
 
 **Saathi on Google 1.0.0 is Saathi 1.4.0 (with Sahay) plus Saathi Didis, rebuilt on Google.** Every feature of Saathi 1.4.0 carries over: Scam Guard with Sahay on Windows and Android, the Scam Shield Network, Saathi Insight and the doctor report, Family Voice, Living Legacy, Saathi Calls, the assistant that acts, passkeys, end-to-end encrypted private messages and the audit log.
