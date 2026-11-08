@@ -1,0 +1,216 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: No known vulnerabilities in what ships
+        run: npm audit --omit=dev --audit-level=high
+      - name: Every installed package has a valid registry signature
+        run: npm audit signatures
+      - name: Lockfile only resolves from the npm registry over https
+        run: |
+          node -e '
+            const lock = require("./package-lock.json");
+            const bad = Object.entries(lock.packages).filter(([k, p]) => k && p.resolved && !p.resolved.startsWith("https://registry.npmjs.org/"));
+            if (bad.length) { console.error(bad.map(([k, p]) => `${k} -> ${p.resolved}`).join("\n")); process.exit(1); }
+            console.log(`${Object.keys(lock.packages).length - 1} packages, all from registry.npmjs.org`);
+          '
+      - name: No secrets committed
+        run: |
+          if git grep -nE '(AIza[0-9A-Za-z_-]{35}|-----BEGIN [A-Z ]*PRIVATE KEY-----|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]{10,})' -- ':!test/**' ':!*.md'; then
+            echo "A secret-looking value is committed. Remove it and rotate it."; exit 1
+          fi
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:core
+      - run: npm run lint
+      - name: Tests, with at least 90% line and 80% branch coverage
+        run: npm run coverage
+        env:
+          SAATHI_METRICS: 'off'
+      - name: Tests with Class B sealing on
+        run: npm test
+        env:
+          SAATHI_METRICS: 'off'
+          SAATHI_TEST_SEAL: '1'
+      - run: npm run eval
+      - run: npm run a11y
+        env:
+          SAATHI_METRICS: 'off'
+      - run: npm run e2e
+        env:
+          SAATHI_METRICS: 'off'
+      - run: node scripts/deploy-cloud-run.js --project=ci-check --dry-run
+  broker-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@f08ac54821369508305fcb9e0121ec6e30ae9ada
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libtss2-dev swtpm swtpm-tools tpm2-tools
+      - run: cargo build --locked --release -p saathi-broker --features tpm
+      - run: npm ci
+      - run: npm run build:core
+      - name: Key broker against a software TPM
+        run: |
+          mkdir -p "$RUNNER_TEMP/tpm"
+          swtpm socket --tpmstate dir="$RUNNER_TEMP/tpm" --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --daemon
+          node --test test/broker.test.js
+        env:
+          SAATHI_TCTI: swtpm:host=127.0.0.1,port=2321
+          SAATHI_TPM_EXTEND_PCR7: '1'
+  broker-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@f08ac54821369508305fcb9e0121ec6e30ae9ada
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: cargo build --locked --release -p saathi-broker
+      - run: npm ci
+      - run: npm run build:core
+      - run: node --test test/broker.test.js
+      - name: Windows key protection
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'saathi-key'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          node -e "require('fs').writeFileSync(process.argv[1], require('crypto').randomBytes(32).toString('base64') + '\n')" (Join-Path $dir 'saathi.key')
+          $out = target/release/saathi-broker.exe protect --dir $dir | ConvertFrom-Json
+          if ($out.error) { throw $out.error }
+          if ($out.protection -notin @('tpm', 'windows-protected')) { throw "unexpected protection $($out.protection)" }
+          if (Test-Path (Join-Path $dir 'saathi.key')) { throw 'the plain key file was not removed' }
+          $status = target/release/saathi-broker.exe status --dir $dir | ConvertFrom-Json
+          Write-Output "protected with $($out.protection); status says $($status.protection)"
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@f08ac54821369508305fcb9e0121ec6e30ae9ada
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: cargo build --locked --release -p saathi-broker -p saathi-launcher
+      - name: Fetch Sahay from its own repository
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target\release | Out-Null
+          Invoke-WebRequest -UseBasicParsing https://github.com/akshatinnovate-png/Sahay/releases/latest/download/Sahay.exe -OutFile target\release\sahay.exe
+          if ((Get-Item target\release\sahay.exe).Length -lt 100000) { throw 'Sahay.exe did not download' }
+      - run: cargo test --locked -p saathi-launcher
+      - run: npm run build:core
+      - run: node scripts/package-windows.js
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { throw 'Inno Setup could not be installed' } }
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          & $iscc "/DAppVersion=$version" installer\saathi.iss
+          if ($LASTEXITCODE) { throw 'the installer did not build' }
+      - name: Install, start, stop and uninstall it like a family would
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem build\out\Saathi-Setup-*.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=desktopicon' -Wait
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Saathi'
+          foreach ($f in 'saathi.exe', 'Sahay.exe', 'runtime\node.exe', 'app\bin\saathi-broker.exe', 'app\src\index.js') { if (-not (Test-Path (Join-Path $app $f))) { throw "missing $f" } }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Saathi.lnk'))) { throw 'no desktop icon' }
+          $env:SAATHI_BREACH_CHECK = 'off'
+          $env:SAATHI_METRICS = 'off'
+          Start-Process (Join-Path $app 'saathi.exe') -ArgumentList '--background'
+          $ok = $false
+          foreach ($i in 1..60) { try { if ((Invoke-WebRequest -UseBasicParsing http://localhost:8787/healthz).StatusCode -eq 200) { $ok = $true; break } } catch { }; Start-Sleep 2 }
+          $log = Join-Path $env:LOCALAPPDATA 'Saathi\logs\saathi.log'
+          if (-not $ok) { Get-Content $log -ErrorAction SilentlyContinue; throw 'Saathi did not start from the installed copy' }
+          Get-Content $log
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Saathi\data\saathi.json'))) { throw 'no encrypted data file in the data folder' }
+          & (Join-Path $app 'saathi.exe') --stop | Out-Null
+          Start-Sleep 3
+          $up = $true
+          try { Invoke-WebRequest -UseBasicParsing http://localhost:8787/healthz -TimeoutSec 3 | Out-Null } catch { $up = $false }
+          if ($up) { throw 'Saathi is still running after --stop' }
+          Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          Start-Sleep 3
+          if (Test-Path (Join-Path $app 'saathi.exe')) { throw 'the uninstaller left Saathi behind' }
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Saathi\data\saathi.json'))) { throw 'the uninstaller deleted the family data' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: saathi-windows-installer
+          path: build/out/Saathi-Setup-*.exe
+          retention-days: 14
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
+        with:
+          gradle-version: '8.11.1'
+      - name: Unit tests, lint and both builds
+        run: gradle --no-daemon -p android testDebugUnitTest lintRelease assembleDebug assembleRelease
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: saathi-android-test-build
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/reports/lint-results-release.html
+          retention-days: 14
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: docker build -t saathi:ci .
+      - run: docker run -d --name saathi -p 8787:8787 saathi:ci
+      - run: |
+          for i in $(seq 1 30); do curl -fs http://localhost:8787/healthz && break; sleep 1; done
+          curl -fs http://localhost:8787/healthz
+          curl -fs -o /dev/null http://localhost:8787/login.html
+          curl -fs http://localhost:8787/api/reference | grep -q '"countries"'
+      - if: failure()
+        run: docker logs saathi

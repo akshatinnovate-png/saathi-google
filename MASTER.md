@@ -188,17 +188,17 @@ Saathi's whole idea is that technology should reach people who were never design
 
 **Saathi does the careful parts with ordinary, checkable code.** Gemini is good at understanding people. It is not the right place to count tablets, decide who may see what, or move money. Those parts are plain software that can be tested and proven. This is how Saathi stays both friendly and trustworthy.
 
-**The family circle stays in sync.** Everything Aaji's family needs (tablets, mood, visits, alerts, stories) is kept in Google's Firebase. Riya, Anand and Meera see it update live on their phones, and alerts arrive as notifications even when the app is closed.
+**The family circle stays in sync.** Everything Aaji's family needs (tablets, mood, visits, alerts, stories) is kept in Firestore. Riya, Anand and Meera see it update live in the family app, and alerts arrive by email. Phone notifications even when the app is closed (Firebase Cloud Messaging) are next on the plan.
 
-**Help is never lost.** When Aaji asks for help, Google Cloud Workflows runs the escalation: family first, then the neighbour or the nearest Didi, then emergency guidance. It keeps going until someone says "I'm on it", even if a server restarts.
+**Help is never lost.** When Aaji asks for help, Saathi's escalation runs on Cloud Run: family first, then the neighbour, then emergency guidance, with every step written to Firestore. It keeps going until someone says "I'm on it". Moving it to Cloud Workflows, so it survives even a server restart, is on the plan.
 
 **Saathi calls, every day.** At the time the family chooses, Saathi phones Aaji's ordinary phone and talks with her in Marathi. If she does not answer twice, the family is told.
 
-**Didis are found nearby.** Google Maps matches each family with Didis within walking distance and gives the Didi directions and timing.
+**Didis are found nearby.** Google Maps (the Routes API) works out how long each Didi takes to reach Aaji's home, and the family sees the nearest first: "12 minutes away", not just "same city".
 
 **Private things stay private.**
 - Family messages can be end-to-end encrypted.
-- Health records are sealed with keys kept in Google Cloud's key service.
+- On a family's own computer, health records are sealed with a key kept in the computer's security chip. On Google Cloud, Firestore encrypts everything, and keys of the family's own (Cloud KMS) are next.
 - Every family's data is kept apart from every other family's.
 - Saathi never sells data and never shows ads.
 
@@ -315,18 +315,25 @@ He wants Saathi to do for every Aaji what it does for one, and to create work fo
 | By 18 November | Selection results; set up the Google Cloud and Firebase projects and credits; try prompts in Google AI Studio |
 | Before 20 November | Prepare only what the rules allow: documents, designs, demo data, accounts. Confirm with the organisers what may be built in advance |
 
-### At the City Buildathon (20-21 November): build Saathi Didis on Google
-**Day 1: Didis can sign up and be found**
-- Didi sign-up with a phone number (Firebase Authentication), profile, languages and areas.
-- Three short voice lessons with Gemini Live.
-- Families find and book a nearby Didi (Google Maps Platform, Firestore).
+### Already built (in this repository)
+Saathi Didis already works end to end, on Google:
+- A Didi signs up in Marathi, Hindi or English, sets her own fee for each kind of help, and adds her UPI ID. A partner code from her self-help group or NGO verifies her, and three short lessons make her ready.
+- Families find Didis by real travel time (Google Maps Routes API) and book one from the family app.
+- The Didi accepts, and Aaji hears who is coming. Gemini writes the visit briefing in the Didi's language from Saathi's records, using only what the family chose to share.
+- She checks in (Aaji is told), writes a visit note in her language, and the family reads it in English (Cloud Translation).
+- The family pays her directly with a UPI link and rates the visit; she sees her visits, earnings and rating.
+- All of Saathi runs on Google: Gemini (API or Vertex AI), Firestore, Cloud Translation, Natural Language, Text-to-Speech, Pub/Sub, Cloud Storage, Maps and Firebase Authentication, deployed to Cloud Run with one command.
 
-**Day 2: The visit, end to end**
-- Booking offer by notification (Firebase Cloud Messaging).
-- A visit briefing in the Didi's language, written by Gemini from Saathi's records.
-- Check-in at the door; the visit appears on the family's timeline.
-- A voice note in Marathi, read by the family in English (Speech-to-Text, Cloud Translation).
-- Payment and an earnings card; a Nano Banana profile card for WhatsApp.
+### At the City Buildathon (20-21 November): make it delightful
+**Day 1: reach and voice**
+- Didi sign-in with just a phone number (Firebase Authentication phone sign-in).
+- The three lessons by voice with Gemini Live, in her language.
+- Booking offers as phone notifications (Firebase Cloud Messaging).
+
+**Day 2: the visit and the proof**
+- A spoken visit note in Marathi, transcribed (Speech-to-Text) and read by the family in English.
+- The escalation on Cloud Workflows, so help survives any restart.
+- A Didi profile card for WhatsApp, made with Gemini image generation.
 
 ### Regional Showcase (23, 25, 27 November)
 Bring numbers from the first real bookings with the partner's caregivers, and the family and caregiver quotes.
@@ -345,7 +352,9 @@ Show the full loop on stage, plus Saathi's existing features running on Google: 
 
 ## 15. Every feature, in full
 
-Each feature below says **what it does for people** and **the Google products behind it**. Features 1 to 31 are in Saathi today; 32 to 39 are Saathi Didis, the new product.
+Each feature below says **what it does for people** and **the Google products behind it**. Features 1 to 31 are in Saathi today; 32 to 39 are Saathi Didis, the new product, which already works end to end.
+
+**What runs on Google today, and what comes next.** "On Google" below is the full design. In the code today, Saathi runs on **Cloud Run** with **Gemini** (Gemini API or Vertex AI), **Firestore**, **Cloud Translation**, **Natural Language**, **Text-to-Speech**, **Pub/Sub**, **Cloud Storage**, **Google Maps (Routes API)**, **Firebase Authentication**, **Google sign-in**, the **Gmail API**, **Secret Manager** and **Cloud Logging**. Gemini Live, Gemini Nano, Speech-to-Text (Chirp), Firebase Cloud Messaging, Cloud Workflows, Cloud KMS, Nano Banana, Lyria, Dialogflow CX, BigQuery and Remote Config are the next steps in section 14.
 
 Kamala ("Aaji") is the elder, Riya her granddaughter in Toronto, Anand her son in Bengaluru, Meera the neighbour, and Sunita a Saathi Didi.
 

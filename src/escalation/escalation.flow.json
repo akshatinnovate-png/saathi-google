@@ -1,0 +1,151 @@
+{
+  "StartAt": "MarkFamilyStage",
+  "States": {
+    "MarkFamilyStage": {
+      "Type": "Task",
+      "Resource": "saathi:alert.update",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } },
+        "UpdateExpression": "SET escalationStage = :s",
+        "ExpressionAttributeValues": { ":s": { "S": "family-notified" } }
+      },
+      "ResultPath": null,
+      "Next": "NotifyFamily"
+    },
+    "NotifyFamily": {
+      "Type": "Task",
+      "Resource": "saathi:notify",
+      "Parameters": {
+        "Topic": "${FamilyTopic}",
+        "Subject.$": "$.subject",
+        "Message.$": "$.familyMessage",
+        "MessageAttributes": {
+          "audience": { "DataType": "String", "StringValue": "family" },
+          "severity": { "DataType": "String", "StringValue.$": "$.severity" },
+          "household": { "DataType": "String", "StringValue.$": "$.householdId" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2 }],
+      "Next": "WaitForFamily"
+    },
+    "WaitForFamily": { "Type": "Wait", "SecondsPath": "$.familyWait", "Next": "CheckFamilyAck" },
+    "CheckFamilyAck": {
+      "Type": "Task",
+      "Resource": "saathi:alert.get",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } }
+      },
+      "ResultPath": "$.ack",
+      "Next": "FamilyAcknowledged"
+    },
+    "FamilyAcknowledged": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            { "Variable": "$.ack.Item.acknowledged.BOOL", "IsPresent": true },
+            { "Variable": "$.ack.Item.acknowledged.BOOL", "BooleanEquals": true }
+          ],
+          "Next": "MarkResolved"
+        }
+      ],
+      "Default": "MarkNeighbourStage"
+    },
+    "MarkNeighbourStage": {
+      "Type": "Task",
+      "Resource": "saathi:alert.update",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } },
+        "UpdateExpression": "SET escalationStage = :s",
+        "ExpressionAttributeValues": { ":s": { "S": "neighbour-notified" } }
+      },
+      "ResultPath": null,
+      "Next": "NotifyNeighbour"
+    },
+    "NotifyNeighbour": {
+      "Type": "Task",
+      "Resource": "saathi:notify",
+      "Parameters": {
+        "Topic": "${FamilyTopic}",
+        "Subject.$": "$.subject",
+        "Message.$": "$.neighbourMessage",
+        "MessageAttributes": {
+          "audience": { "DataType": "String", "StringValue": "neighbour" },
+          "severity": { "DataType": "String", "StringValue": "high" },
+          "household": { "DataType": "String", "StringValue.$": "$.householdId" }
+        }
+      },
+      "ResultPath": null,
+      "Retry": [{ "ErrorEquals": ["States.TaskFailed"], "IntervalSeconds": 2, "MaxAttempts": 3, "BackoffRate": 2 }],
+      "Next": "WaitForNeighbour"
+    },
+    "WaitForNeighbour": { "Type": "Wait", "SecondsPath": "$.neighbourWait", "Next": "CheckNeighbourAck" },
+    "CheckNeighbourAck": {
+      "Type": "Task",
+      "Resource": "saathi:alert.get",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } }
+      },
+      "ResultPath": "$.ack",
+      "Next": "NeighbourAcknowledged"
+    },
+    "NeighbourAcknowledged": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "And": [
+            { "Variable": "$.ack.Item.acknowledged.BOOL", "IsPresent": true },
+            { "Variable": "$.ack.Item.acknowledged.BOOL", "BooleanEquals": true }
+          ],
+          "Next": "MarkResolved"
+        }
+      ],
+      "Default": "MarkEmergencyStage"
+    },
+    "MarkEmergencyStage": {
+      "Type": "Task",
+      "Resource": "saathi:alert.update",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } },
+        "UpdateExpression": "SET escalationStage = :s",
+        "ExpressionAttributeValues": { ":s": { "S": "emergency-guidance-sent" } }
+      },
+      "ResultPath": null,
+      "Next": "NotifyEmergency"
+    },
+    "NotifyEmergency": {
+      "Type": "Task",
+      "Resource": "saathi:notify",
+      "Parameters": {
+        "Topic": "${FamilyTopic}",
+        "Subject.$": "$.subject",
+        "Message.$": "$.emergencyMessage",
+        "MessageAttributes": {
+          "audience": { "DataType": "String", "StringValue": "everyone" },
+          "severity": { "DataType": "String", "StringValue": "critical" },
+          "household": { "DataType": "String", "StringValue.$": "$.householdId" }
+        }
+      },
+      "ResultPath": null,
+      "End": true
+    },
+    "MarkResolved": {
+      "Type": "Task",
+      "Resource": "saathi:alert.update",
+      "Parameters": {
+        "Collection": "${Collection}",
+        "Key": { "pk": { "S.$": "$.alertsKey" }, "sk": { "S.$": "$.alertId" } },
+        "UpdateExpression": "SET escalationStage = :s",
+        "ExpressionAttributeValues": { ":s": { "S": "resolved" } }
+      },
+      "ResultPath": null,
+      "End": true
+    }
+  }
+}

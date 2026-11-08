@@ -1,0 +1,2 @@
+*.wasm binary
+src/security/saathi-core.wasm linguist-generated=true

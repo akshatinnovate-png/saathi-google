@@ -1,0 +1,410 @@
+import { createHash, randomBytes, randomInt } from 'node:crypto';
+import { hashPassword, verifyPassword, passwordProblem, burnEqualTime } from './passwords.js';
+import { AuthError } from './errors.js';
+import { DEFAULT_HOUSEHOLD, scopeStore } from '../households/scope.js';
+import { buildHousehold, newHouseholdId, validateOnboarding } from '../households/onboarding.js';
+import { ALL_SCOPES, SCOPES } from '../auth/scopes.js';
+
+export const DEMO_PASSWORD = 'saathi-demo-2026';
+const DEMO_ACCOUNTS = [
+  { email: 'riya@saathi.demo', name: 'Riya', memberId: 'riya', role: 'owner' },
+  { email: 'anand@saathi.demo', name: 'Anand', memberId: 'anand', role: 'member' },
+  { email: 'meera@saathi.demo', name: 'Meera', memberId: 'meera', role: 'member' },
+];
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const INVITE_DAYS = 30;
+const PAIRING_MINUTES = 15;
+const PAIRING_EMOJI = ['🌻', '🐘', '🎈', '🍉', '🦋', '🚲', '🌙', '🐢', '🍋', '🎸', '🦜', '🌈', '🍪', '🐳', '🌵', '🎁', '🦊', '🍓', '🚀', '🐝', '🌷', '🥭', '🪁', '🐼', '⛵', '🍄', '🦚', '🔔', '🐠', '🍍', '🌼', '🧸'];
+
+export const normaliseEmail = (email) => String(email ?? '').trim().toLowerCase();
+const hashToken = (token) => createHash('sha256').update(token).digest('hex');
+
+export function createAccounts({ store, services, identity = null, demo = false, clock = () => new Date(), onInvite = null, breachCheck = null }) {
+  const claiming = new Set();
+  const publicAccount = (a) => a && ({
+    email: a.email, name: a.name, householdId: a.householdId ?? null, memberId: a.memberId ?? null, role: a.role ?? null,
+    provider: a.provider, avatar: a.avatar ?? null,
+    hasPassword: Boolean(a.passwordHash), totp: Boolean(a.totp?.enabled), passkeys: (a.passkeys ?? []).length,
+  });
+
+  const throttleId = (email) => createHash('sha256').update(`login:${email}`).digest('hex');
+  async function throttleCheck(email) {
+    const t = await store.get('loginThrottle', throttleId(email));
+    const wait = t?.lockedUntil ? Date.parse(t.lockedUntil) - clock().getTime() : 0;
+    if (wait > 0) {
+      const minutes = Math.ceil(wait / 60000);
+      throw new AuthError('limit', `Too many wrong tries. Please wait ${minutes} minute${minutes === 1 ? '' : 's'} and try again.`);
+    }
+  }
+  async function throttleFail(email) {
+    const id = throttleId(email);
+    const t = (await store.get('loginThrottle', id)) ?? { id, fails: 0 };
+    const fails = t.fails + 1;
+    const lockSeconds = fails >= 5 ? Math.min(3600, 30 * 2 ** (fails - 5)) : 0;
+    await store.put('loginThrottle', { id, fails, lastFailAt: clock().toISOString(), lockedUntil: lockSeconds ? new Date(clock().getTime() + lockSeconds * 1000).toISOString() : null });
+  }
+  const throttleClear = (email) => store.remove('loginThrottle', throttleId(email));
+  async function rejectBreached(password) {
+    if (!breachCheck) return;
+    const times = await breachCheck(password);
+    if (times > 0) throw new AuthError('password', `That password has shown up in ${times.toLocaleString('en')} data breaches, so attackers try it first. Please choose another.`);
+  }
+
+  async function ensureDemo() {
+    if (!demo) return;
+    const hash = await hashPassword(DEMO_PASSWORD);
+    for (const d of DEMO_ACCOUNTS) {
+      if (await store.get('accounts', d.email)) continue;
+      await store.put('accounts', { id: d.email, ...d, householdId: DEFAULT_HOUSEHOLD, provider: 'local', passwordHash: hash, demo: true, createdAt: clock().toISOString() });
+    }
+    if (!(await store.get('households', DEFAULT_HOUSEHOLD))) {
+      await store.put('households', { id: DEFAULT_HOUSEHOLD, name: "Aaji's home (demo)", owner: 'riya@saathi.demo', createdAt: clock().toISOString() });
+    }
+  }
+
+  async function issueInvite({ householdId, inviter, member }) {
+    const token = randomBytes(24).toString('base64url');
+    await store.put('invites', { id: member.email, householdId, memberId: member.id, invitedBy: inviter.email, createdAt: clock().toISOString() });
+    await store.put('inviteTokens', {
+      id: hashToken(token), email: member.email, householdId, memberId: member.id, invitedBy: inviter.email,
+      expiresAt: new Date(clock().getTime() + INVITE_DAYS * 86400_000).toISOString(),
+    });
+    const sent = onInvite ? await onInvite({ householdId, inviterName: inviter.name ?? inviter.email, member, token }).catch((err) => ({ emailed: false, error: err.message })) : {};
+    return { token, ...sent };
+  }
+
+  async function inviteFor(token) {
+    const invite = token ? await store.get('inviteTokens', hashToken(String(token))) : null;
+    if (!invite || invite.expiresAt < clock().toISOString()) return null;
+    return invite;
+  }
+
+  async function joinHousehold(account, invite) {
+    if (account.householdId) return account;
+    const joined = await store.update('accounts', account.email, { householdId: invite.householdId, memberId: invite.memberId, role: 'member' });
+    await store.remove('invites', invite.email);
+    await store.remove('inviteTokens', invite.id);
+    if (account.email !== invite.email) await scopeStore(store, invite.householdId).update('circle', invite.memberId, { email: account.email });
+    return joined;
+  }
+
+  async function adopt({ email, name, provider, sub }) {
+    let account = await store.get('accounts', email);
+    if (!account) {
+      account = { id: email, email, name: name || email.split('@')[0], provider, householdId: null, memberId: null, role: null, createdAt: clock().toISOString() };
+      const invite = await store.get('invites', email);
+      if (invite) {
+        Object.assign(account, { householdId: invite.householdId, memberId: invite.memberId, role: 'member' });
+        await store.remove('invites', email);
+        for (const t of (await store.list('inviteTokens')).filter((x) => x.email === email)) await store.remove('inviteTokens', t.id);
+      }
+      await store.put('accounts', account);
+    }
+    if (sub && account.sub !== sub) {
+      account = await store.update('accounts', email, { sub });
+      await store.put('accountSubs', { id: sub, email });
+    }
+    return account;
+  }
+
+  return {
+    providers: () => ({ identity: identity?.kind ?? null, demo }),
+
+    async googleLogin(identity, { invite: token } = {}) {
+      let account = await adopt({ email: identity.email, name: identity.name, provider: 'google', sub: identity.sub });
+      const invite = await inviteFor(token);
+      if (invite) account = await joinHousehold(account, invite);
+      return publicAccount(account);
+    },
+
+    async previewInvite(token) {
+      const invite = await inviteFor(token);
+      if (!invite) return null;
+      const scoped = scopeStore(store, invite.householdId);
+      const [profile, member, inviter] = await Promise.all([scoped.get('profile', 'elder'), scoped.get('circle', invite.memberId), store.get('accounts', invite.invitedBy)]);
+      return { email: invite.email, elderName: profile?.preferredName ?? null, memberName: member?.name ?? null, language: member?.language ?? 'en', inviterName: inviter?.name ?? invite.invitedBy, exists: Boolean(await store.get('accounts', invite.email)) };
+    },
+
+    async acceptInvite(email, token) {
+      const invite = await inviteFor(token);
+      if (!invite) throw new AuthError('invite', 'This invite link has expired or was already used. Ask for a new one.');
+      const account = await store.get('accounts', normaliseEmail(email));
+      if (!account) throw new AuthError('account', 'Please log in again.');
+      if (account.householdId && account.householdId !== invite.householdId) throw new AuthError('exists', 'You already belong to another household.');
+      return publicAccount(await joinHousehold(account, invite));
+    },
+
+    async resendInvite(ownerEmail, memberId) {
+      const owner = await store.get('accounts', normaliseEmail(ownerEmail));
+      if (owner?.role !== 'owner') throw new AuthError('forbidden', 'Only the person who set up this household can send invites.');
+      const member = await scopeStore(store, owner.householdId).get('circle', memberId);
+      if (!member?.email) throw new AuthError('email', 'Add an email address for them first.');
+      if (await store.get('accounts', member.email)) throw new AuthError('exists', `${member.name} has already joined.`);
+      for (const t of (await store.list('inviteTokens')).filter((x) => x.email === member.email)) await store.remove('inviteTokens', t.id);
+      const sent = await issueInvite({ householdId: owner.householdId, inviter: owner, member });
+      return { link: sent.link, emailed: Boolean(sent.emailed), via: sent.via ?? null };
+    },
+
+    async removeMember(ownerEmail, memberId) {
+      const owner = await store.get('accounts', normaliseEmail(ownerEmail));
+      if (owner?.role !== 'owner') throw new AuthError('forbidden', 'Only the person who set up this household can remove people.');
+      if (memberId === owner.memberId) throw new AuthError('forbidden', "You can't remove yourself while you own this household.");
+      const saathi = services.forHousehold(owner.householdId);
+      const member = await saathi.removeMember(memberId);
+      if (!member) throw new AuthError('member', 'That person is not in the circle.');
+      const detached = (await store.list('accounts')).filter((a) => a.householdId === owner.householdId && a.memberId === memberId);
+      for (const account of detached) {
+        await store.update('accounts', account.email, { householdId: null, memberId: null, role: null });
+      }
+      if (member.email) {
+        await store.remove('invites', member.email);
+        for (const t of (await store.list('inviteTokens')).filter((x) => x.email === member.email)) await store.remove('inviteTokens', t.id);
+      }
+      return { removed: member.id, accounts: detached.map((a) => a.email) };
+    },
+
+    async pendingInvites(householdId) {
+      return (await store.list('invites')).filter((i) => i.householdId === householdId).map((i) => ({ email: i.id, memberId: i.memberId, createdAt: i.createdAt }));
+    },
+
+    async createPairingCode(email) {
+      const account = await store.get('accounts', normaliseEmail(email));
+      if (!account?.householdId) throw new AuthError('account', 'Set up a household first.');
+      const now = clock();
+      for (const old of await store.list('pairingCodes')) if (old.expiresAt < now.toISOString() || old.createdBy === account.email) await store.remove('pairingCodes', old.id);
+      let code;
+      do code = String(randomInt(0, 1_000_000)).padStart(6, '0'); while (await store.get('pairingCodes', code));
+      const expiresAt = new Date(now.getTime() + PAIRING_MINUTES * 60_000).toISOString();
+      await store.put('pairingCodes', { id: code, householdId: account.householdId, createdBy: account.email, expiresAt, attempts: 0 });
+      return { code, expiresAt };
+    },
+
+    async pairDevice(code, { label, agent } = {}) {
+      const entry = await store.get('pairingCodes', String(code ?? '').replace(/\D/g, ''));
+      if (!entry || entry.expiresAt < clock().toISOString()) throw new AuthError('code', 'That code did not work. Check the number in the family app, or make a new one.');
+      await store.remove('pairingCodes', entry.id);
+      const secret = randomBytes(32).toString('base64url');
+      const now = clock().toISOString();
+      const taken = new Set((await store.list('pairRequests'))
+        .filter((r) => r.householdId === entry.householdId && r.status === 'pending' && r.expiresAt > now)
+        .map((r) => r.emoji.join('')));
+      let emoji;
+      do emoji = Array.from({ length: 3 }, () => PAIRING_EMOJI[randomInt(0, PAIRING_EMOJI.length)]); while (taken.has(emoji.join('')));
+      const request = {
+        id: `pr_${randomBytes(12).toString('base64url')}`, householdId: entry.householdId, secretHash: hashToken(secret),
+        emoji,
+        label: label ? String(label).slice(0, 60) : null, agent: String(agent ?? '').slice(0, 80), status: 'pending',
+        codeBy: entry.createdBy, createdAt: clock().toISOString(), expiresAt: new Date(clock().getTime() + 10 * 60_000).toISOString(),
+      };
+      await store.put('pairRequests', request);
+      return { requestId: request.id, secret, emoji: request.emoji, householdId: request.householdId };
+    },
+
+    async pairStatus(requestId, secret) {
+      const request = requestId ? await store.get('pairRequests', String(requestId)) : null;
+      if (!request || request.secretHash !== hashToken(String(secret ?? ''))) return { status: 'unknown' };
+      if (request.status === 'pending' && request.expiresAt < clock().toISOString()) {
+        await store.update('pairRequests', request.id, { status: 'expired' });
+        return { status: 'expired' };
+      }
+      if (request.status !== 'approved') return { status: request.status, emoji: request.emoji };
+      if (request.deviceId || claiming.has(request.id)) return { status: 'claimed' };
+      claiming.add(request.id);
+      try {
+        const profile = await scopeStore(store, request.householdId).get('profile', 'elder');
+        const device = {
+          id: `dev_${randomBytes(12).toString('base64url')}`, householdId: request.householdId,
+          label: request.label ?? `${profile?.preferredName ?? 'Home'}'s Saathi`, pairedBy: request.decidedBy, pairedAt: clock().toISOString(),
+        };
+        await store.put('devices', device);
+        await store.update('pairRequests', request.id, { deviceId: device.id, secretHash: null });
+        return { status: 'approved', device };
+      } finally {
+        claiming.delete(request.id);
+      }
+    },
+
+    async pairRequests(householdId) {
+      const now = clock().toISOString();
+      return (await store.list('pairRequests'))
+        .filter((r) => r.householdId === householdId && r.status === 'pending' && r.expiresAt > now)
+        .map(({ secretHash, ...r }) => r);
+    },
+
+    async decidePairRequest(email, requestId, approve) {
+      const account = await store.get('accounts', normaliseEmail(email));
+      const request = await store.get('pairRequests', String(requestId));
+      if (!account?.householdId || !request || request.householdId !== account.householdId) throw new AuthError('code', 'That request is not for your family.');
+      if (request.status !== 'pending' || request.expiresAt < clock().toISOString()) throw new AuthError('code', 'That request has already been answered or has expired.');
+      return store.update('pairRequests', request.id, { status: approve ? 'approved' : 'denied', decidedBy: account.email, decidedAt: clock().toISOString() });
+    },
+
+    async getDevice(id) {
+      return id ? store.get('devices', id) : null;
+    },
+
+    async listDevices(householdId) {
+      return (await store.list('devices')).filter((d) => d.householdId === householdId).sort((a, b) => b.pairedAt.localeCompare(a.pairedAt));
+    },
+
+    async removeDevice(householdId, id) {
+      const device = await store.get('devices', id);
+      if (!device || device.householdId !== householdId) return false;
+      return store.remove('devices', id);
+    },
+    ensureDemo,
+    async get(email) {
+      return publicAccount(await store.get('accounts', normaliseEmail(email)));
+    },
+    async bySub(sub) {
+      const link = await store.get('accountSubs', sub);
+      return link ? publicAccount(await store.get('accounts', link.email)) : null;
+    },
+
+    async signUp({ email, password, name }) {
+      email = normaliseEmail(email);
+      if (!EMAIL.test(email)) throw new AuthError('email', 'Please enter a valid email address.');
+      const problem = passwordProblem(password, { email, name });
+      if (problem) throw new AuthError('password', problem);
+      await rejectBreached(password);
+      if (email.endsWith('@saathi.demo')) throw new AuthError('exists', 'Demo accounts already exist. Log in instead.');
+      if (await store.get('accounts', email)) throw new AuthError('exists', 'An account with this email already exists. Try logging in.');
+      if (identity) {
+        const who = await identity.signUp({ email, password, name });
+        return { account: publicAccount(await adopt({ email: who.email || email, name: who.name ?? name, provider: identity.kind, sub: who.sub })) };
+      }
+      if (await store.get('accounts', email)) throw new AuthError('exists', 'An account with this email already exists. Try logging in.');
+      await adopt({ email, name, provider: 'local' });
+      const account = await store.update('accounts', email, { passwordHash: await hashPassword(password) });
+      return { account: publicAccount(account) };
+    },
+
+    async confirm() {
+      throw new AuthError('code', 'There is no code to type: open the link in the email we sent you.');
+    },
+
+    async resend({ email }) {
+      if (identity?.sendPasswordReset) await identity.sendPasswordReset(normaliseEmail(email)).catch(() => {});
+    },
+
+    async login({ email, password }) {
+      email = normaliseEmail(email);
+      await throttleCheck(email);
+      const local = await store.get('accounts', email);
+      if (local?.demo && !demo) throw new AuthError('credentials', 'Demo accounts are switched off here. Run "npm run demo" to try the demo family.');
+      if (local && !local.passwordHash && local.provider === 'google') throw new AuthError('credentials', 'This account signs in with Google. Tap the Google button above.');
+      if (local?.passwordHash) {
+        const result = await verifyPassword(password ?? '', local.passwordHash);
+        if (!result.ok) {
+          await throttleFail(email);
+          throw new AuthError('credentials', 'That email and password do not match.');
+        }
+        await throttleClear(email);
+        if (result.needsRehash) await store.update('accounts', email, { passwordHash: await hashPassword(password) });
+        return publicAccount(local);
+      }
+      if (!identity) {
+        await burnEqualTime(password ?? '');
+        await throttleFail(email);
+        throw new AuthError('credentials', 'That email and password do not match.');
+      }
+      let who;
+      try {
+        who = await identity.login({ email, password });
+      } catch (err) {
+        if (err instanceof AuthError && err.code === 'credentials') await throttleFail(email);
+        throw err;
+      }
+      await throttleClear(email);
+      return publicAccount(await adopt({ email: who.email || email, name: who.name, provider: identity.kind, sub: who.sub }));
+    },
+
+    async socialLogin(who) {
+      if (!who.email) throw new AuthError('social', 'The provider did not share an email address.');
+      return publicAccount(await adopt({ email: who.email, name: who.name, provider: 'google', sub: who.sub }));
+    },
+
+    async changePassword(email, { current, next }) {
+      email = normaliseEmail(email);
+      const account = await store.get('accounts', email);
+      if (!account) throw new AuthError('account', 'Please log in again.');
+      if (account.passwordHash) {
+        const result = await verifyPassword(current ?? '', account.passwordHash);
+        if (!result.ok) {
+          await throttleFail(email);
+          throw new AuthError('credentials', 'Your current password is not right.');
+        }
+      }
+      const problem = passwordProblem(next, { email, name: account.name });
+      if (problem) throw new AuthError('password', problem);
+      await rejectBreached(next);
+      await store.update('accounts', email, { passwordHash: await hashPassword(next), passwordChangedAt: clock().toISOString() });
+      return publicAccount(await store.get('accounts', email));
+    },
+
+    raw: (email) => store.get('accounts', normaliseEmail(email)),
+    update: (email, patch) => store.update('accounts', normaliseEmail(email), patch),
+    publicAccount,
+
+    async createHousehold(email, form) {
+      const account = await store.get('accounts', normaliseEmail(email));
+      if (!account) throw new AuthError('account', 'Please log in again.');
+      if (account.householdId) throw new AuthError('exists', 'You already belong to a household.');
+      const problems = validateOnboarding(form);
+      if (problems.length) throw new AuthError('form', problems.join(' '));
+      const householdId = newHouseholdId();
+      const translate = async (text, to) => {
+        const out = await services.translator.translate(text, { from: 'en', to });
+        return out.translated ? out.text : null;
+      };
+      const data = await buildHousehold(form, { ownerEmail: account.email, translate, now: clock() });
+      const { ownerMemberId, ...collections } = data;
+      await scopeStore(store, householdId).seed(collections);
+      await store.put('households', { id: householdId, name: `${collections.profile[0].preferredName}'s home`, owner: account.email, createdAt: clock().toISOString() });
+      const updated = await store.update('accounts', account.email, { householdId, memberId: ownerMemberId, role: 'owner' });
+      const saathi = services.forHousehold(householdId);
+      for (const member of collections.circle.filter((m) => m.email && m.email !== account.email)) {
+        await issueInvite({ householdId, inviter: account, member });
+      }
+      await saathi.subscribeMember?.({ email: account.email, memberId: ownerMemberId, role: 'family' });
+      return publicAccount(updated);
+    },
+
+    async invite(ownerEmail, { email, name, relationship, language, role = 'family' }) {
+      const owner = await store.get('accounts', normaliseEmail(ownerEmail));
+      if (owner?.role !== 'owner') throw new AuthError('forbidden', 'Only the person who set up this household can invite others.');
+      email = normaliseEmail(email);
+      if (!EMAIL.test(email)) throw new AuthError('email', 'Please enter a valid email address.');
+      const already = (await scopeStore(store, owner.householdId).list('circle')).find((p) => normaliseEmail(p.email) === email);
+      if (already) throw new AuthError('exists', `${already.name} is already in the circle. Use "Send again" below if they need the link.`);
+      const saathi = services.forHousehold(owner.householdId);
+      const member = await saathi.addMember({ name, relationship, language, role, email });
+      const existing = await store.get('accounts', email);
+      let sent = { emailed: false, link: null };
+      if (existing && !existing.householdId) await store.update('accounts', email, { householdId: owner.householdId, memberId: member.id, role: 'member' });
+      else if (!existing) sent = await issueInvite({ householdId: owner.householdId, inviter: owner, member });
+      await saathi.subscribeMember?.({ email, memberId: member.id, role });
+      return { ...member, invite: { link: sent.link ?? null, emailed: Boolean(sent.emailed), via: sent.via ?? null, joined: Boolean(existing) } };
+    },
+
+    async issueDeviceToken(email, { label = 'Assistant device', scopes = ALL_SCOPES } = {}) {
+      const account = await store.get('accounts', normaliseEmail(email));
+      if (!account?.householdId) throw new AuthError('account', 'Set up a household first.');
+      if (scopes.includes(SCOPES.elder) && account.role !== 'owner') throw new AuthError('forbidden', "Only the household owner can connect a device.");
+      const token = `sth_${randomBytes(24).toString('base64url')}`;
+      await store.put('deviceTokens', { id: hashToken(token), householdId: account.householdId, scopes, label, createdBy: account.email, createdAt: clock().toISOString() });
+      return token;
+    },
+
+    async internalDeviceToken(householdId, label) {
+      const token = `sth_${randomBytes(24).toString('base64url')}`;
+      await store.put('deviceTokens', { id: hashToken(token), householdId, scopes: ALL_SCOPES, label, internal: true, createdAt: clock().toISOString() });
+      return token;
+    },
+
+    async verifyDeviceToken(token) {
+      if (!String(token).startsWith('sth_')) return null;
+      return store.get('deviceTokens', hashToken(token));
+    },
+  };
+}

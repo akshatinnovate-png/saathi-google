@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saathi</title>
+  <meta name="description" content="Saathi keeps elders and the families who love them close, in every language.">
+  <link rel="icon" href="assets/logo-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="preload" as="video" href="assets/intro.mp4" type="video/mp4">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="landing.css">
+</head>
+<body class="landing-body">
+  <div class="intro" id="intro" aria-hidden="true">
+    <video class="intro-video" id="intro-video" muted playsinline preload="auto" poster="assets/intro-poster.jpg">
+      <source src="assets/intro.webm" type="video/webm">
+      <source src="assets/intro.mp4" type="video/mp4">
+    </video>
+    <div class="intro-shade"></div>
+    <canvas class="halftone" id="intro-dots"></canvas>
+    <div class="intro-logo" id="intro-logo">
+      <img src="assets/logo-cream.svg" alt="">
+      <span class="logo-word">Saathi</span>
+    </div>
+    <button class="intro-skip" id="intro-skip" type="button" tabindex="-1">Skip</button>
+  </div>
+
+  <div class="slides" id="slides" aria-hidden="true"></div>
+  <div class="slides-shade" aria-hidden="true"></div>
+  <canvas class="halftone landing-dots" id="landing-dots" aria-hidden="true"></canvas>
+
+  <header class="landing-top">
+    <a class="logo landing-logo" href="/" aria-label="Saathi home">
+      <img src="assets/logo-cream.svg" alt="">
+      <span class="logo-word">Saathi</span>
+    </a>
+    <nav class="landing-nav" aria-label="Main">
+      <a href="/device.html">Set up a device</a>
+      <a href="/family.html">Family Circle</a>
+      <a class="landing-signin" id="signin" href="/login.html">Sign in</a>
+    </nav>
+  </header>
+
+  <main class="landing-main">
+    <h1 class="landing-title">Closer, in every language.</h1>
+    <p class="landing-sub">A Gemini-powered companion for the people who raised us, and a circle for everyone who loves them.</p>
+    <form class="ask" id="ask" role="search" action="/family.html" method="get">
+      <label class="sr-only" for="ask-input">Ask Saathi</label>
+      <svg class="ask-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" fill="currentColor"/></svg>
+      <input id="ask-input" name="ask" type="text" autocomplete="off" placeholder="Ask anything about Saathi…">
+      <button class="ask-go" type="submit" aria-label="Ask">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+    <div class="guide-log" id="guide-log" role="log" aria-live="polite" hidden></div>
+    <ul class="ask-chips" aria-label="Try asking">
+      <li><button type="button" data-q="What is Saathi?">What is Saathi?</button></li>
+      <li><button type="button" data-q="Is my family's data private?">Is our data private?</button></li>
+      <li><button type="button" data-q="How does it stop scam calls?">How does it stop scams?</button></li>
+      <li><button type="button" data-q="How was Aaji this week?">How was Aaji this week?</button></li>
+    </ul>
+  </main>
+
+  <footer class="landing-foot">
+    <section class="caption" aria-live="polite" aria-label="About this image">
+      <span class="caption-kicker">Today's view</span>
+      <strong class="caption-title" id="caption-title"></strong>
+      <span class="caption-place" id="caption-place"></span>
+    </section>
+    <div class="slide-controls" role="group" aria-label="Background images">
+      <button type="button" id="slide-prev" aria-label="Previous image">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="slide-dots" id="slide-dots"></div>
+      <button type="button" id="slide-pause" aria-label="Pause slideshow" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6v12M15 6v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button type="button" id="slide-next" aria-label="Next image">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </footer>
+
+  <script type="module" src="landing.js"></script>
+</body>
+</html>

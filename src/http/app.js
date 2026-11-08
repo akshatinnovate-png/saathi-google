@@ -1,0 +1,671 @@
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { rateLimit } from 'express-rate-limit';
+import QRCode from 'qrcode';
+import { securityHeaders } from '../security/headers.js';
+import { crossSiteGuard, createRateLimiter, RATE_RULES, safeJsonReviver, errorHandler } from '../security/guards.js';
+import { mountSecurity } from './securityRoutes.js';
+import { COUNTRIES, PRONOUNS } from '../domain/people.js';
+import { hostHeaderValidation, localhostHostValidation } from '@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js';
+import { mountMcp } from './mcpRoute.js';
+import { mountAuth } from './authRoutes.js';
+import { mountDidis, mountFamilyDidis } from './didiRoutes.js';
+import { apiGuard, mayDo } from './guard.js';
+import { onThisComputer } from '../agent/sahayQueue.js';
+import { isTechHelp, languageOf, askedSahay, instructionFor } from '../agent/techHelp.js';
+import { AuthError } from '../accounts/errors.js';
+import { LANGUAGES } from '../domain/languages.js';
+import { seedData } from '../domain/seed.js';
+import { DEFAULT_HOUSEHOLD } from '../households/scope.js';
+import { createReplayGuard, verifySignature, normaliseRingEvent, SIGNATURE_HEADER, TIMESTAMP_HEADER } from '../ring/webhook.js';
+
+const PROTECTED_PAGES = ['/legacy.html', '/doctor-report.html', '/scam-guard.html', '/family.html', '/alexa.html', '/welcome.html', '/scan.html', '/medical-id.html'];
+
+export function createApp({ config, services, simulatorFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, assistantFor, google, familyMail, doorbell, security = null, audit = null, keyring = null, vault = null, sahayQueue = null, guide = null, scamNetwork = null, billing = null, calls = null, didis = null }) {
+  const { localBus, store } = services;
+  const app = express();
+  app.set('trust proxy', config.web?.trustProxy ?? 'loopback');
+  app.disable('x-powered-by');
+  const publicUrl = config.auth.publicUrl ?? null;
+  app.use(securityHeaders({
+    publicDir: fileURLToPath(new URL('../../public', import.meta.url)),
+    https: Boolean(publicUrl?.startsWith('https://')),
+    mediaHosts: config.google?.storage ? ['https://storage.googleapis.com'] : [],
+  }));
+  const limiter = createRateLimiter();
+  if (config.web?.rateLimit !== false) app.use(limiter.middleware(config.web?.rateRules ?? RATE_RULES));
+  app.use(crossSiteGuard({ allowedOrigins: publicUrl ? [new URL(publicUrl).origin] : [] }));
+  app.get('/healthz', (_req, res) => res.json({ ok: true }));
+  const requireLogin = config.web?.requireLogin !== false && Boolean(accounts && sessions);
+
+  if (allowedHosts?.length) app.use(hostHeaderValidation(allowedHosts));
+  else if (['127.0.0.1', 'localhost', '::1'].includes(config.host)) app.use(localhostHostValidation());
+  if (config.web?.canonicalLocalhost && !config.auth.publicUrl) {
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && req.hostname === '127.0.0.1' && !req.path.startsWith('/mcp') && !req.path.startsWith('/api/')) {
+        return res.redirect(`http://localhost:${req.socket.localPort}${req.originalUrl}`);
+      }
+      next();
+    });
+  }
+  app.use(express.json({ limit: '1mb', reviver: safeJsonReviver, verify: (req, _res, buf) => { req.rawBody = buf.toString('utf8'); } }));
+
+  mountMcp(app, services, { verifier, optionalVerifier, bus: localBus, auth: config.auth, requireToken: Boolean(config.web?.exposed), audit });
+
+  const ringReplay = createReplayGuard();
+  app.post('/ring/events', async (req, res, next) => {
+    try {
+      const check = verifySignature({ secret: config.ring.webhookSecret, signature: req.get(SIGNATURE_HEADER), timestamp: req.get(TIMESTAMP_HEADER), rawBody: req.rawBody ?? '', replay: ringReplay });
+      if (!check.ok) return res.status(401).json({ error: check.reason });
+      let event;
+      try { event = normaliseRingEvent(req.body); } catch (err) { return res.status(400).json({ error: err.message }); }
+      const device = await store.get('ringDevices', event.deviceId);
+      if (!device && !config.demo) return res.status(404).json({ error: 'Unknown doorbell. Use the doorbell link from your household settings.' });
+      res.json(await services.forHousehold(device?.householdId ?? DEFAULT_HOUSEHOLD).doorEvent(event));
+    } catch (err) { next(err); }
+  });
+
+  app.post('/hooks/doorbell/:token', express.urlencoded({ extended: false }), async (req, res, next) => {
+    try {
+      if (!doorbell) return res.status(404).json({ error: 'Doorbell links are not available.' });
+      const result = await doorbell.handleHook(req.params.token, { ...req.query, ...(typeof req.body === 'object' ? req.body : {}) });
+      if (!result) return res.status(404).json({ error: 'This doorbell link is not valid any more. Make a new one in Saathi settings.' });
+      res.json({ ok: true, kind: result.event.kind });
+    } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  const exposed = Boolean(config.web?.exposed);
+  const sahayLocal = (req, res, next) => {
+    if (!sahayQueue) return res.status(404).json({ error: 'Not found.' });
+    if (!onThisComputer(req, { exposed }) || req.get('x-sahay') !== '1' || req.get('origin')) return res.status(403).json({ error: 'Only Sahay on this computer can do that.' });
+    next();
+  };
+  app.get('/sahay/next', sahayLocal, (_req, res) => {
+    const task = sahayQueue.next();
+    if (!task) return res.status(204).end();
+    res.json(task);
+  });
+  const sahayHousehold = async () => (await services.householdIds()).find((id) => id !== DEFAULT_HOUSEHOLD) ?? DEFAULT_HOUSEHOLD;
+  app.post('/sahay/incidents', sahayLocal, async (req, res, next) => {
+    try {
+      const householdId = await sahayHousehold();
+      const out = await services.forHousehold(householdId).recordScamIncident(req.body ?? {});
+      audit?.append({ householdId, actor: 'sahay', action: 'scam-stopped', detail: { id: out.id, kind: req.body?.kind ?? null } }).catch(() => {});
+      res.json(out);
+    } catch (err) { next(err); }
+  });
+  app.get('/sahay/holds/:id', sahayLocal, async (req, res, next) => {
+    try {
+      const hold = await services.forHousehold(await sahayHousehold()).scamHold(req.params.id);
+      if (!hold) return res.status(404).json({ error: 'No such incident.' });
+      res.json(hold);
+    } catch (err) { next(err); }
+  });
+  app.post('/sahay/tasks/:id', sahayLocal, (req, res) => {
+    try {
+      const task = sahayQueue.update(req.params.id, { status: req.body?.status, note: req.body?.note });
+      if (!task) return res.status(404).json({ error: 'No such task.' });
+      res.json(task);
+    } catch (err) {
+      res.status(err.status ?? 400).json({ error: err.message });
+    }
+  });
+
+  app.post('/guide', async (req, res, next) => {
+    try {
+      if (!guide) return res.status(404).json({ error: 'Not found.' });
+      res.json(await guide.ask({ message: req.body?.message }));
+    } catch (err) {
+      if (err.status === 400) return res.status(400).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  const callsLimit = rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false });
+  app.post('/calls/:step', callsLimit, express.urlencoded({ extended: false, limit: '64kb' }), async (req, res, next) => {
+    try {
+      if (!calls?.enabled) return res.status(404).json({ error: 'Not found.' });
+      const fullUrl = `${config.auth.publicUrl}${req.originalUrl}`;
+      if (!calls.verify(fullUrl, req.body ?? {}, req.get('x-twilio-signature'))) return res.status(403).json({ error: 'Bad signature.' });
+      if (req.params.step === 'status') return res.json(await calls.status(req.query.t, req.body ?? {}));
+      res.type('text/xml').send(await calls.step(req.params.step, req.query.t, req.body ?? {}));
+    } catch (err) { next(err); }
+  });
+
+  const webhookLimit = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: 'draft-7', legacyHeaders: false });
+  app.post('/billing/razorpay/webhook', webhookLimit, async (req, res, next) => {
+    try {
+      if (!billing?.enabled) return res.status(404).json({ error: 'Not found.' });
+      if (!billing.verify(req.rawBody, req.get('x-razorpay-signature'))) return res.status(400).json({ error: 'Bad signature.' });
+      res.json(await billing.webhook(req.body));
+    } catch (err) { next(err); }
+  });
+
+  if (didis) mountDidis(app, { didis, config });
+
+  const guard = apiGuard({ requireLogin, defaultHousehold: DEFAULT_HOUSEHOLD, services, audit });
+  if (accounts && sessions) mountAuth(app, { config, accounts, sessions, security, google, familyMail, audit, guard });
+  else app.use('/api', guard);
+  if (accounts && sessions && security && audit) mountSecurity(app, { accounts, sessions, security, audit, keyring });
+  const record = (req, action, detail = {}) => audit?.append({ householdId: req.householdId ?? null, actor: req.user?.email ?? req.device?.id ?? null, action, detail, ip: req.ip }).catch(() => {});
+
+  app.use((req, _res, next) => {
+    const fallback = requireLogin ? null : DEFAULT_HOUSEHOLD;
+    req.householdId = req.user?.householdId ?? req.device?.householdId ?? fallback;
+    req.memberId = req.user?.memberId ?? null;
+    next();
+  });
+
+  app.get(PROTECTED_PAGES, (req, res, next) => {
+    if (!requireLogin) return next();
+    if (!req.user && req.device) return req.path === '/alexa.html' ? next() : res.redirect('/alexa.html');
+    if (!req.user) return res.redirect(`/login.html?next=${encodeURIComponent(req.originalUrl)}`);
+    if (!req.user.householdId && req.path !== '/welcome.html') return res.redirect('/welcome.html');
+    if (req.user.householdId && req.path === '/welcome.html') return res.redirect('/family.html');
+    next();
+  });
+
+  const api = express.Router();
+  const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
+  const memberOf = (req) => req.memberId ?? req.body?.member ?? req.query.member ?? (config.demo ? 'riya' : null);
+
+  api.use((req, res, next) => {
+    if (!req.householdId) return res.status(401).json({ error: requireLogin && req.user ? 'Set up your household first.' : 'Please log in.' });
+    req.saathi = services.forHousehold(req.householdId);
+    next();
+  });
+
+  const originOf = (req) => config.auth.publicUrl ?? `${req.protocol}://${req.get('host')}`;
+
+  api.post('/devices/pairing-code', wrap(async (req, res) => {
+    const { code, expiresAt } = await accounts.createPairingCode(req.user.email);
+    record(req, 'pairing-code-made');
+    const url = `${originOf(req)}/device.html`;
+    const qr = await QRCode.toString(`${url}?code=${code}`, { type: 'svg', margin: 1, color: { dark: '#16181d', light: '#ffffff' } });
+    res.json({ code, expiresAt, url, qr });
+  }));
+
+  api.get('/devices/requests', wrap(async (req, res) => {
+    res.json(await accounts.pairRequests(req.householdId));
+  }));
+
+  api.post('/devices/requests/:id', wrap(async (req, res) => {
+    const approve = req.body?.approve === true;
+    const out = await accounts.decidePairRequest(req.user.email, req.params.id, approve);
+    record(req, approve ? 'device-approved' : 'device-refused', { emoji: out.emoji.join('') });
+    res.json({ status: out.status });
+  }));
+
+  const who = (req) => ({ email: req.user?.email ?? null, deviceId: req.user ? null : req.device?.id ?? null });
+  const vaultRoute = (fn) => wrap(async (req, res) => {
+    if (!vault) return res.status(404).json({ error: 'Private family keys are not available here.' });
+    if (!req.user && !req.device) return res.status(401).json({ error: 'Please log in.' });
+    try {
+      res.json(await fn(req));
+    } catch (err) {
+      if (err instanceof AuthError) return res.status(err.code === 'forbidden' ? 403 : err.code === 'limit' ? 429 : 400).json({ error: err.message, code: err.code });
+      throw err;
+    }
+  });
+  api.get('/vault', vaultRoute((req) => vault.state(req.householdId, who(req))));
+  api.get('/vault/keys/:keyId', vaultRoute((req) => vault.keysFor(req.householdId, who(req), req.params.keyId)));
+  api.post('/vault/init', vaultRoute((req) => vault.init(req.householdId, who(req), req.body ?? {})));
+  api.post('/vault/join', vaultRoute((req) => vault.startJoin(req.householdId, who(req), req.body ?? {})));
+  api.get('/vault/join/:id', vaultRoute((req) => vault.joinStatus(req.householdId, who(req), req.params.id)));
+  api.post('/vault/join/:id/reveal', vaultRoute((req) => vault.reveal(req.householdId, who(req), req.params.id, req.body ?? {})));
+  api.post('/vault/join/:id/nonce', vaultRoute((req) => vault.approverNonce(req.householdId, who(req), req.params.id, req.body?.nonce)));
+  api.post('/vault/join/:id/decide', vaultRoute((req) => vault.decide(req.householdId, who(req), req.params.id, { approve: req.body?.approve === true, wrapped: req.body?.wrapped, cert: req.body?.cert })));
+  api.post('/vault/rotate', vaultRoute((req) => vault.rotate(req.householdId, who(req), req.body ?? {})));
+  api.put('/vault/recovery', vaultRoute((req) => vault.setRecovery(req.householdId, who(req), req.body ?? {})));
+  api.post('/vault/recover', vaultRoute((req) => vault.recoverDevice(req.householdId, who(req), req.body ?? {})));
+
+  api.get('/devices', wrap(async (req, res) => {
+    res.json(await accounts.listDevices(req.householdId));
+  }));
+
+  api.delete('/devices/:id', wrap(async (req, res) => {
+    const removed = Boolean(await accounts.removeDevice(req.householdId, req.params.id));
+    if (removed) {
+      await sessions?.revokeWhere((s) => s.kind === 'device' && s.deviceId === req.params.id);
+      record(req, 'device-removed', { device: req.params.id });
+    }
+    res.json({ removed });
+  }));
+
+  api.get('/mail', wrap(async (req, res) => {
+    res.json(familyMail ? await familyMail.status(req.householdId) : { service: 'none', real: false, gmail: null, googleAvailable: false });
+  }));
+
+  api.post('/mail/test', wrap(async (req, res) => {
+    if (!familyMail) return res.status(404).json({ error: 'Email is not set up.' });
+    res.json(await familyMail.sendTest(req.householdId, { to: req.user.email, name: req.user.name }));
+  }));
+
+  api.delete('/mail/gmail', wrap(async (req, res) => {
+    if (!familyMail) return res.status(404).json({ error: 'Email is not set up.' });
+    const removed = Boolean(await familyMail.disconnectGmail(req.householdId));
+    record(req, 'gmail-disconnected');
+    res.json({ removed });
+  }));
+
+  api.get('/care', wrap(async (req, res) => {
+    res.json(await req.saathi.careSetup());
+  }));
+
+  api.post('/care/medications', wrap(async (req, res) => {
+    res.json(await req.saathi.saveMedication({ ...(req.body ?? {}), id: undefined }));
+  }));
+
+  api.put('/care/medications/:id', wrap(async (req, res) => {
+    res.json(await req.saathi.saveMedication({ ...(req.body ?? {}), id: req.params.id }));
+  }));
+
+  api.delete('/care/medications/:id', wrap(async (req, res) => {
+    res.json({ removed: Boolean(await req.saathi.removeMedication(req.params.id)) });
+  }));
+
+  api.post('/care/appointments', wrap(async (req, res) => {
+    res.json(await req.saathi.saveAppointment({ ...(req.body ?? {}), id: undefined }));
+  }));
+
+  api.put('/care/appointments/:id', wrap(async (req, res) => {
+    res.json(await req.saathi.saveAppointment({ ...(req.body ?? {}), id: req.params.id }));
+  }));
+
+  api.delete('/care/appointments/:id', wrap(async (req, res) => {
+    res.json({ removed: Boolean(await req.saathi.removeAppointment(req.params.id)) });
+  }));
+
+  api.put('/care/routine', wrap(async (req, res) => {
+    res.json(await req.saathi.saveRoutine(req.body?.routine ?? []));
+  }));
+
+  api.get('/doorbell', wrap(async (req, res) => {
+    res.json(doorbell ? await doorbell.status(req.householdId) : { hookUrl: null, ring: { connected: false } });
+  }));
+
+  api.post('/doorbell/hook', wrap(async (req, res) => {
+    if (!doorbell) return res.status(404).json({ error: 'Doorbells are not available here.' });
+    const hookUrl = await doorbell.newHook(req.householdId);
+    record(req, 'doorbell-link-made');
+    res.json({ hookUrl });
+  }));
+
+  api.post('/doorbell/ring', wrap(async (req, res) => {
+    if (!doorbell) return res.status(404).json({ error: 'Doorbells are not available here.' });
+    res.json(await doorbell.connectRing(req.householdId, req.body ?? {}));
+  }));
+
+  api.post('/doorbell/ring/code', wrap(async (req, res) => {
+    if (!doorbell) return res.status(404).json({ error: 'Doorbells are not available here.' });
+    res.json(await doorbell.verifyRingCode(req.householdId, req.body?.code));
+  }));
+
+  api.delete('/doorbell/ring', wrap(async (req, res) => {
+    if (!doorbell) return res.status(404).json({ error: 'Doorbells are not available here.' });
+    res.json(await doorbell.disconnectRing(req.householdId));
+  }));
+
+  api.put('/household/profile', wrap(async (req, res) => {
+    const profile = await req.saathi.updateProfile(req.body ?? {});
+    record(req, 'profile-changed', { fields: Object.keys(req.body ?? {}).slice(0, 20) });
+    res.json(profile);
+  }));
+
+  api.delete('/household/members/:memberId', wrap(async (req, res) => {
+    const out = await accounts.removeMember(req.user.email, req.params.memberId);
+    for (const email of out.accounts) await sessions?.revokeWhere((s) => s.kind === 'user' && s.email === email);
+    record(req, 'member-removed', { member: out.removed });
+    res.json(out);
+  }));
+
+  api.get('/household/invites', wrap(async (req, res) => {
+    res.json(await accounts.pendingInvites(req.householdId));
+  }));
+
+  api.post('/household/invite/:memberId/resend', wrap(async (req, res) => {
+    res.json(await accounts.resendInvite(req.user.email, req.params.memberId));
+  }));
+
+  api.get('/status', wrap(async (req, res) => {
+    const circle = await req.saathi.circle();
+    const elder = await req.saathi.elder();
+    const withAvatar = async (p) => (p?.avatar ? { ...p, avatarUrl: await (services.media.playbackUrl?.(p.avatar) ?? p.avatar) } : p);
+    res.json({
+      services: services.describe(), auth: config.auth.mode, brain: simulatorFor ? (await simulatorFor(req.householdId)).brain : 'offline-planner',
+      languages: LANGUAGES, elder: await withAvatar(req.role === 'neighbour' && elder ? (({ medical, ...rest }) => rest)(elder) : elder), circle: await Promise.all(circle.map(withAvatar)),
+      demo: Boolean(config.demo), householdId: req.householdId, me: req.user ?? null, memberId: req.memberId, device: req.device ? { id: req.device.id, label: req.device.label } : null,
+    });
+  }));
+
+  api.post('/alexa/turn', (req, res, next) => {
+    const text = String(req.body?.text ?? '');
+    if (sahayQueue && isTechHelp(text) && onThisComputer(req, { exposed })) {
+      const language = languageOf(text, req.body?.language ?? 'en');
+      const task = sahayQueue.enqueue({ householdId: req.householdId, instruction: instructionFor(text), original: text, language, requestedBy: 'elder' });
+      record(req, 'sahay-task', { id: task.id, via: 'elder' });
+      return res.json({ reply: askedSahay(language, { running: sahayQueue.alive() }), sahayTask: task, trace: [] });
+    }
+    return next();
+  });
+
+  api.post('/alexa/turn', wrap(async (req, res) => {
+    const { text, language = 'en', sessionId = 'device-1' } = req.body ?? {};
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+    res.json(await (await simulatorFor(req.householdId)).turn({ sessionId, text: text.trim(), language }));
+  }));
+
+  api.post('/alexa/answer', wrap(async (req, res) => {
+    const { id, accept } = req.body ?? {};
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    res.json(await (await simulatorFor(req.householdId)).answer({ id, accept: Boolean(accept) }));
+  }));
+
+  api.post('/alexa/reset', wrap(async (req, res) => {
+    (await simulatorFor(req.householdId)).reset(req.body?.sessionId ?? 'device-1');
+    res.json({ ok: true });
+  }));
+
+  api.post('/assistant', wrap(async (req, res) => {
+    const { message, audience = 'family', language, conversationId } = req.body ?? {};
+    if (!message?.trim()) return res.status(400).json({ error: 'message is required' });
+    const result = await (await assistantFor(req.householdId)).ask({ message: message.trim(), audience, language, memberId: memberOf(req), conversationId, onSahayPc: onThisComputer(req, { exposed }) });
+    if (result.sahayTask) record(req, 'sahay-task', { id: result.sahayTask.id, via: 'assistant' });
+    res.json(result);
+  }));
+
+  const ACTION_POLICY = {
+    add_medicine: 'care.edit', change_medicine: 'care.edit', stop_medicine: 'care.edit', add_doctor_visit: 'care.edit',
+    record_refill: 'care.refill', escort_doctor_visit: 'care.escort', acknowledge_alert: 'alerts.ack',
+    send_message_to_elder: 'messages.send', ask_sahay: 'care.edit',
+  };
+
+  api.post('/assistant/confirm', wrap(async (req, res) => {
+    const assistant = await assistantFor(req.householdId);
+    const pending = assistant.peek?.(req.body?.id);
+    const denied = pending ? mayDo(req, ACTION_POLICY[pending.name] ?? 'care.edit') : null;
+    if (denied) return res.status(denied.status).json({ error: denied.error, code: denied.code });
+    try {
+      const out = await assistant.confirm({ id: req.body?.id, memberId: memberOf(req), saathi: req.saathi });
+      record(req, 'assistant-action', { action: pending?.name ?? null, summary: out.summary });
+      res.json(out);
+    } catch (err) {
+      if (!err.status) throw err;
+      res.status(err.status).json({ error: err.message });
+    }
+  }));
+
+  api.post('/assistant/dismiss', wrap(async (req, res) => {
+    res.json({ dismissed: (await assistantFor(req.householdId)).dismiss(req.body?.id) });
+  }));
+
+  api.get('/scam-network', wrap(async (req, res) => {
+    res.json({ ...(await req.saathi.scamNetworkView(scamNetwork?.warnings ?? [])), fetchedAt: scamNetwork?.fetchedAt ?? null });
+  }));
+
+  api.put('/scam-network', wrap(async (req, res) => {
+    await req.saathi.updateProfile({ scamNetwork: { receive: req.body?.receive, share: req.body?.share } });
+    if (req.body?.receive && scamNetwork && !scamNetwork.fetchedAt) await scamNetwork.refresh();
+    record(req, 'scam-network', { receive: Boolean(req.body?.receive), share: Boolean(req.body?.share) });
+    res.json(await req.saathi.scamNetworkView(scamNetwork?.warnings ?? []));
+  }));
+
+  const paidExtra = (feature, label) => async (req, res, next) => {
+    try {
+      if (!billing || (await billing.entitled(req.householdId, feature))) return next();
+      res.status(402).json({ error: `${label} is part of the Family plan. You can see the plans in Settings, Plan.`, code: 'plan' });
+    } catch (err) { next(err); }
+  };
+
+  api.get('/calls', wrap(async (req, res) => {
+    const me = await req.saathi.elder();
+    res.json({ enabled: Boolean(calls?.enabled), settings: me?.calls ?? { enabled: false, phone: null, time: '10:00', summaryTo: [] } });
+  }));
+
+  api.put('/calls', wrap(async (req, res) => {
+    await req.saathi.updateProfile({ calls: req.body ?? {} });
+    record(req, 'calls-settings', { enabled: Boolean(req.body?.enabled) });
+    res.json({ enabled: Boolean(calls?.enabled), settings: (await req.saathi.elder()).calls });
+  }));
+
+  api.post('/calls/now', paidExtra('saathi-calls', 'Saathi Calls'), wrap(async (req, res) => {
+    if (!calls?.enabled) return res.status(400).json({ error: 'Saathi Calls are not set up on this Saathi.' });
+    try {
+      const out = await calls.place(req.householdId);
+      record(req, 'call-now', { sid: out.sid });
+      res.json(out);
+    } catch (err) {
+      if (!err.status) throw err;
+      res.status(err.status).json({ error: err.message });
+    }
+  }));
+
+  mountFamilyDidis(api, { didis, record, memberOf });
+
+  api.get('/plan', wrap(async (req, res) => {
+    res.json(billing ? await billing.status(req.householdId) : { enabled: false, paidExtras: 'all' });
+  }));
+
+  api.post('/plan/checkout', wrap(async (req, res) => {
+    if (!billing) return res.status(400).json({ error: 'Payments are not set up on this Saathi; everything is already included.' });
+    try {
+      const out = await billing.checkout(req.householdId, { plan: req.body?.plan, email: req.user?.email });
+      record(req, 'plan-checkout', { plan: req.body?.plan });
+      res.json(out);
+    } catch (err) {
+      if (!err.status) throw err;
+      res.status(err.status).json({ error: err.message });
+    }
+  }));
+
+  api.post('/plan/cancel', wrap(async (req, res) => {
+    try {
+      const out = billing ? await billing.cancel(req.householdId) : { plan: 'free', status: 'cancelled' };
+      record(req, 'plan-cancel', {});
+      res.json(out);
+    } catch (err) {
+      if (!err.status) throw err;
+      res.status(err.status).json({ error: err.message });
+    }
+  }));
+
+  api.get('/insight', paidExtra('insight', 'Saathi Insight'), wrap(async (req, res) => {
+    res.json(await req.saathi.insight({ weeks: req.query.weeks }));
+  }));
+
+  api.get('/scam-guard/incidents', wrap(async (req, res) => {
+    res.json({ incidents: await req.saathi.scamIncidents() });
+  }));
+
+  api.post('/scam-guard/incidents/:id/decide', wrap(async (req, res) => {
+    const out = await req.saathi.decideScamHold({ incidentId: req.params.id, decision: req.body?.decision, by: memberOf(req) });
+    if (!out) return res.status(404).json({ error: 'No such incident.' });
+    record(req, 'scam-hold', { id: req.params.id, decision: req.body?.decision });
+    res.json(out);
+  }));
+
+  api.get('/sahay/tasks', wrap(async (req, res) => {
+    res.json({ running: Boolean(sahayQueue?.alive()), tasks: sahayQueue ? sahayQueue.list(req.householdId) : [] });
+  }));
+
+  api.post('/speak', wrap(async (req, res) => {
+    const { text, language = 'en', slow = false } = req.body ?? {};
+    const spoken = text ? await services.speech.synthesize(text, language, { slow }) : null;
+    if (!spoken) return res.status(204).end();
+    res.set('Content-Type', spoken.contentType).set('X-Voice', spoken.voice).send(spoken.audio);
+  }));
+
+  if (config.demo) api.post('/ring/simulate', wrap(async (req, res) => {
+    const kind = req.body?.kind;
+    if (!['ding', 'motion'].includes(kind)) return res.status(400).json({ error: 'kind must be ding or motion' });
+    const deviceId = req.householdId === DEFAULT_HOUSEHOLD ? 'front-door' : `front-door-${req.householdId}`;
+    if (req.householdId !== DEFAULT_HOUSEHOLD) await store.put('ringDevices', { id: deviceId, householdId: req.householdId });
+    res.json(await ringSimulator.trigger(kind, deviceId));
+  }));
+
+  api.get('/family/summary', wrap(async (req, res) => {
+    const summary = await req.saathi.familySummary({ forMemberId: req.memberId ?? req.query.member });
+    if (req.role !== 'neighbour') return res.json(summary);
+    const alerts = summary.alerts.filter((a) => a.type === 'help').map(({ id, type, severity, reason, createdAt, acknowledged, acknowledgedBy, acknowledgedAt, escalationStage }) => ({ id, type, severity, reason, createdAt, acknowledged, acknowledgedBy, acknowledgedAt, escalationStage }));
+    const waiting = alerts.filter((a) => !a.acknowledged).length;
+    const english = waiting ? `${waiting} call(s) for help waiting for someone to respond.` : 'No calls for help right now.';
+    res.json({ english, text: english, language: 'en', neighbour: true, alerts, medications: [], checkins: [], stories: [], appointments: [], adherence: [], letter: null });
+  }));
+
+  api.get('/family/messages', wrap(async (req, res) => {
+    const scoped = req.saathi;
+    const messages = (await scoped.messages()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30);
+    res.json(await Promise.all(messages.map(async (m) => (m.audio ? { ...m, audioUrl: await (services.media.playbackUrl?.(m.audio) ?? m.audio) } : m))));
+  }));
+
+  const e2eOf = (req) => (req.get('x-saathi-e2e') ? { itemId: req.get('x-saathi-e2e'), mediaType: req.get('x-saathi-media-type') } : null);
+
+  api.post('/family/voice-note', express.raw({ type: ['audio/*', 'application/vnd.saathi.e2e'], limit: '9mb' }), wrap(async (req, res) => {
+    const from = req.memberId ?? req.query.from;
+    if (!from || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'from and an audio body are required' });
+    res.json(await req.saathi.addVoiceNote({ fromId: String(from), audio: req.body, contentType: req.get('content-type'), durationSec: Number(req.query.duration) || undefined, e2e: e2eOf(req) }));
+  }));
+
+  api.post('/family/reminder-voice', paidExtra('family-voice', 'Family Voice'), express.raw({ type: ['audio/*'], limit: '4mb' }), wrap(async (req, res) => {
+    const from = req.memberId ?? req.query.from;
+    if (!from || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'from and an audio body are required' });
+    res.json(await req.saathi.saveReminderVoice({ fromId: String(from), audio: req.body, contentType: req.get('content-type'), medicationId: req.query.medication || null }));
+  }));
+
+  api.get('/family/legacy', wrap(async (req, res) => {
+    res.json(await req.saathi.legacyBook());
+  }));
+
+  api.get('/family/reminder-voices', wrap(async (req, res) => {
+    res.json({ voices: await req.saathi.reminderVoices() });
+  }));
+
+  api.delete('/family/reminder-voice', wrap(async (req, res) => {
+    const from = req.memberId ?? req.query.from;
+    res.json({ removed: Boolean(await req.saathi.removeReminderVoice({ fromId: String(from), medicationId: req.query.medication || null })) });
+  }));
+
+  api.post('/family/avatar', express.raw({ type: ['image/png', 'image/jpeg', 'image/webp', 'application/vnd.saathi.e2e'], limit: '4mb' }), wrap(async (req, res) => {
+    const memberId = req.query.for === 'elder' ? 'elder' : req.memberId ?? req.query.for;
+    if (!memberId || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'an image body is required' });
+    const updated = await req.saathi.setAvatar({ memberId, image: req.body, contentType: req.get('content-type'), e2e: e2eOf(req) });
+    res.json({ ...updated, avatarUrl: await (services.media.playbackUrl?.(updated.avatar) ?? updated.avatar) });
+  }));
+
+  api.post('/family/refill', wrap(async (req, res) => {
+    const r = await req.saathi.recordRefill({ medicationId: req.body?.medicationId, quantity: Number(req.body?.quantity) || 30, by: memberOf(req) });
+    if (!r) return res.status(404).json({ error: 'medicine not found' });
+    res.json(r);
+  }));
+
+  api.post('/family/escort', wrap(async (req, res) => {
+    const r = await req.saathi.claimEscort({ appointmentId: req.body?.appointmentId, member: memberOf(req) });
+    if (!r) return res.status(404).json({ error: 'appointment or member not found' });
+    res.json(r);
+  }));
+
+  api.post('/family/letter', wrap(async (req, res) => {
+    const letters = await req.saathi.weeklyLetters({ send: Boolean(req.body?.send), save: true });
+    res.json(letters.find((l) => l.memberId === memberOf(req)) ?? null);
+  }));
+
+  api.get('/family/door', wrap(async (req, res) => {
+    res.json((await req.saathi.doorActivity()).slice(0, 20));
+  }));
+
+  api.post('/family/message', wrap(async (req, res) => {
+    if (req.body?.e2e) return res.json(await req.saathi.messageFromFamily({ fromId: memberOf(req), e2e: req.body.e2e }));
+    const text = req.body?.text;
+    if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
+    res.json(await req.saathi.messageFromFamily({ fromId: memberOf(req), text: text.trim() }));
+  }));
+
+  api.post('/family/alerts/:id/ack', wrap(async (req, res) => {
+    const alert = await req.saathi.acknowledgeAlert({ alertId: req.params.id, by: memberOf(req) });
+    if (!alert) return res.status(404).json({ error: 'alert not found' });
+    res.json(alert);
+  }));
+
+  api.get('/home', wrap(async (req, res) => {
+    res.json(await req.saathi.homeMap());
+  }));
+
+  api.put('/home/rooms', wrap(async (req, res) => {
+    res.json(await req.saathi.saveRooms({ rooms: req.body?.rooms, source: req.body?.source ?? 'manual', by: memberOf(req) }));
+  }));
+
+  api.post('/home/items', wrap(async (req, res) => {
+    res.json(await req.saathi.placeItem({ ...req.body, by: memberOf(req) }));
+  }));
+
+  api.delete('/home/items/:id', wrap(async (req, res) => {
+    res.json({ removed: await req.saathi.removeItem(req.params.id) });
+  }));
+
+  api.post('/household/invite', wrap(async (req, res) => {
+    if (!accounts || !req.user) return res.status(401).json({ error: 'Please log in.' });
+    const member = await accounts.invite(req.user.email, req.body ?? {});
+    record(req, 'member-invited', { member: member.id, emailed: member.invite?.emailed ?? false });
+    res.json(member);
+  }));
+
+  api.post('/household/device-token', wrap(async (req, res) => {
+    if (!accounts || !req.user) return res.status(401).json({ error: 'Please log in.' });
+    const token = await accounts.issueDeviceToken(req.user.email, { label: String(req.body?.label ?? 'Assistant device').slice(0, 60) });
+    record(req, 'alexa-key-made');
+    res.json({ token, mcpUrl: `${config.auth.publicUrl ?? `${req.protocol}://${req.get('host')}`}/mcp` });
+  }));
+
+  api.get('/events', (req, res) => {
+    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+    res.flushHeaders();
+    const mine = (event) => (event.detail?.householdId ?? DEFAULT_HOUSEHOLD) === req.householdId;
+    const send = (event) => mine(event) && res.write(`data: ${JSON.stringify(event)}\n\n`);
+    localBus.recent?.().slice(-20).forEach(send);
+    const unsubscribe = localBus.subscribe(send);
+    const ping = setInterval(() => res.write(': ping\n\n'), 15000);
+    req.on('close', () => { clearInterval(ping); unsubscribe(); });
+  });
+
+  if (config.demo) api.post('/demo/reset', wrap(async (req, res) => {
+    if (req.householdId !== DEFAULT_HOUSEHOLD) return res.status(403).json({ error: 'Only the demo household can be reset.' });
+    await services.resetDemo(seedData());
+    (await simulatorFor?.(req.householdId))?.reset('device-1');
+    await localBus.publish('DemoReset', { householdId: DEFAULT_HOUSEHOLD });
+    res.json({ ok: true });
+  }));
+
+  if (config.demo) api.post('/demo/sweep', wrap(async (req, res) => {
+    res.json({
+      raised: await req.saathi.sweepMissedDoses(), quietDay: await req.saathi.sweepQuietDay(),
+      refills: await req.saathi.sweepSupplies(), escorts: await req.saathi.sweepAppointments(),
+    });
+  }));
+
+  app.get('/api/reference', (_req, res) => res.json({ countries: COUNTRIES, pronouns: PRONOUNS, languages: LANGUAGES }));
+  app.use('/api', api);
+  app.get('/media/*path', async (req, res, next) => {
+    try {
+      if (!services.media.read) return res.status(404).end();
+      if (!(await services.media.verify?.(req.path, req.query))) return res.status(403).json({ error: 'This link has expired. Open it again from Saathi.' });
+      const file = await services.media.read(decodeURIComponent(req.path.slice('/media/'.length)));
+      if (!file) return res.status(404).end();
+      res.set({ 'Content-Type': file.contentType, 'Cache-Control': 'private, max-age=300', 'Content-Disposition': 'inline' }).send(file.body);
+    } catch (err) { next(err); }
+  });
+  app.use('/vendor/webauthn', express.static(fileURLToPath(new URL('../../node_modules/@simplewebauthn/browser/esm', import.meta.url)), { index: false }));
+  for (const lib of ['hashes', 'curves', 'post-quantum']) {
+    app.use(`/vendor/noble-${lib}`, express.static(fileURLToPath(new URL(`../../node_modules/@noble/${lib}`, import.meta.url)), { index: false, extensions: false }));
+  }
+  app.use('/vendor/fonts', express.static(fileURLToPath(new URL('../../node_modules/@fontsource', import.meta.url)), { index: false, maxAge: '30d' }));
+  app.use('/vendor/fonts-variable', express.static(fileURLToPath(new URL('../../node_modules/@fontsource-variable', import.meta.url)), { index: false, maxAge: '30d' }));
+  app.use('/vendor/three', express.static(fileURLToPath(new URL('../../node_modules/three', import.meta.url)), { index: false }));
+  app.use(express.static(fileURLToPath(new URL('../../public', import.meta.url))));
+
+  app.use(errorHandler());
+
+  return app;
+}
