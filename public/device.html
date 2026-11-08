@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Set up this device · Saathi</title>
+  <meta name="description" content="Turn this Android tablet, Nest Hub or phone into Saathi for your elder.">
+  <link rel="icon" href="assets/logo-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="device.css">
+  <link rel="stylesheet" href="florals.css">
+</head>
+<body class="dev bloom bloom-dark">
+  <main class="dev-main" id="main">
+    <img class="dev-logo" src="assets/logo-cream.svg" alt="Saathi" width="56" height="56">
+    <h1 id="dev-title" class="serif-head">Set up this device</h1>
+    <p class="dev-sub" id="dev-sub">In the Saathi family app, tap the <strong>tablet</strong> button (Set up their device). Type the six numbers you see there.</p>
+
+    <form class="dev-form" id="dev-form" novalidate>
+      <label class="sr-only" for="code">Six-digit code</label>
+      <input class="dev-code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*" placeholder="000 000" aria-describedby="dev-error">
+      <div class="dev-pad" role="group" aria-label="Number keypad">
+        <button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button>
+        <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button>
+        <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button>
+        <button type="button" data-key="back" aria-label="Delete">⌫</button><button type="button" data-key="0">0</button>
+        <button type="submit" class="go" aria-label="Connect">→</button>
+      </div>
+      <p class="dev-error" id="dev-error" role="alert" hidden></p>
+    </form>
+
+    <section class="dev-wait" id="dev-wait" hidden aria-live="polite">
+      <p class="dev-emoji" id="dev-emoji" role="img" aria-label=""></p>
+      <p>Ask your family to open the Saathi app. They will see these same three pictures and tap <strong>Approve</strong>.</p>
+      <p class="dev-wait-note">If the pictures there are different, they should tap <strong>Not this one</strong>.</p>
+    </section>
+
+    <section class="dev-done" id="dev-done" hidden aria-live="polite">
+      <p class="dev-check" aria-hidden="true">✓</p>
+      <p id="dev-done-text">Connected.</p>
+    </section>
+
+    <p class="dev-help">Works on an Android tablet, a Google Nest Hub with a browser, or an old phone. Keep it plugged in near where your elder sits.</p>
+  </main>
+  <script type="module" src="device.js"></script>
+</body>
+</html>

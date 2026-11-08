@@ -1,0 +1,13 @@
+node_modules
+data
+.env
+
+test
+evals
+docs
+
+.git
+target
+core/fuzz/target
+core/fuzz/corpus
+

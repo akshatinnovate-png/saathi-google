@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saathi Family Circle</title>
+  <meta name="description" content="How your family's elder is today, in your language.">
+  <link rel="icon" href="assets/logo-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="family.css">
+  <link rel="stylesheet" href="florals.css">
+  <link rel="stylesheet" href="assistant.css">
+  <link rel="stylesheet" href="home3d.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/", "@noble/hashes/": "/vendor/noble-hashes/", "@noble/curves/": "/vendor/noble-curves/", "@noble/post-quantum/": "/vendor/noble-post-quantum/" } }</script>
+</head>
+<body class="fam bloom bloom-cream">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="fam-shell">
+    <main class="fam-main" id="main">
+      <p class="toast" id="toast" role="status" hidden></p>
+      <header class="fam-head">
+        <div>
+          <p class="fam-date" id="today"></p>
+          <h1 class="fam-hello serif-head" id="hello">Hello</h1>
+        </div>
+        <div class="fam-head-actions">
+          <label class="view-as" id="view-as" hidden>
+            <span>Viewing as</span>
+            <select id="member"></select>
+          </label>
+          <button class="chip-btn" id="t-large" type="button" aria-pressed="false">Large text</button>
+          <button class="chip-btn" id="t-contrast" type="button" aria-pressed="false">High contrast</button>
+        </div>
+      </header>
+
+      <section class="view" id="view-overview" data-view="overview" aria-labelledby="hello">
+        <div id="alerts" class="alerts" aria-live="assertive" aria-label="Alerts"></div>
+        <div class="overview">
+          <article class="hero sprig" aria-labelledby="hero-label">
+            <div class="hero-top">
+              <span class="hero-chip" id="hero-label"><span class="avatar xs" id="hero-avatar"></span><span id="hero-chip-text">Tablets today</span></span>
+            </div>
+            <p class="hero-big" id="hero-big">–</p>
+            <p class="hero-sub" id="hero-sub"></p>
+            <div class="insight" aria-labelledby="insight-label">
+              <p class="insight-label" id="insight-label"><span class="sparkle-dot" aria-hidden="true"></span>SAATHI AI</p>
+              <p class="insight-text" id="summary" aria-live="polite">Loading…</p>
+              <p class="insight-en" id="summary-en"></p>
+              <ol class="days" id="days" aria-label="Tablets taken in the last three days"></ol>
+              <div class="insight-actions">
+                <a class="pill-action" id="insight-action" href="#messages">Send a voice note <span aria-hidden="true">→</span></a>
+                <button class="text-action" type="button" id="insight-dismiss">Not now</button>
+              </div>
+            </div>
+          </article>
+
+          <div class="side">
+            <section aria-labelledby="family-h">
+              <div class="side-head"><h2 id="family-h">Your family</h2><span id="family-count"></span></div>
+              <div class="people" id="people"></div>
+            </section>
+            <section aria-labelledby="next-h">
+              <div class="side-head"><h2 id="next-h">Up next</h2><a href="#care" class="see-all">See all</a></div>
+              <ol class="upnext" id="upnext"></ol>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-care" data-view="care" aria-labelledby="care-h" hidden>
+        <h2 class="view-title" id="care-h">Care</h2>
+        <div class="grid">
+          <article class="glass span-6" aria-labelledby="meds-h"><div class="card-head"><h3 id="meds-h">Tablets today</h3><button class="text-action" type="button" id="manage-meds">Manage medicines</button></div><div class="list" id="meds"></div></article>
+          <article class="glass span-6" aria-labelledby="appts-h"><div class="card-head"><h3 id="appts-h">Doctor visits</h3><button class="text-action" type="button" id="manage-appts">Add a visit</button></div><div class="list" id="appointments"></div></article>
+          <article class="glass span-6" aria-labelledby="calls-h" id="calls-card" hidden><div class="card-head"><h3 id="calls-h">Saathi Calls</h3></div>
+            <p class="muted small">Saathi phones them every day on any phone: tablets, how they feel, and your messages. If nobody answers twice, you are told.</p>
+            <form class="calls-form" id="calls-form">
+              <label class="inline-check"><input type="checkbox" id="calls-enabled"> Call every day</label>
+              <label>Their phone (with country code) <input id="calls-phone" type="tel" inputmode="tel" placeholder="+919812345678"></label>
+              <label>Time <input id="calls-time" type="time" value="10:00"></label>
+              <label>Send a WhatsApp summary to (optional, comma separated) <input id="calls-summary" type="text" placeholder="+919800000000"></label>
+              <div class="calls-actions"><button class="pill-action" type="submit">Save</button><button class="pill-action" type="button" id="calls-now">Call now</button></div>
+            </form>
+            <p class="small" id="calls-status" aria-live="polite"></p>
+          </article>
+          <article class="glass span-6" aria-labelledby="didis-h" id="didis-card"><div class="card-head"><h3 id="didis-h">Saathi Didis</h3><a class="text-action" href="/didi.html">Become a Didi</a></div>
+            <p class="muted small">Verified women from their neighbourhood, trained by Saathi and paid by you straight to UPI: a doctor escort, a visit, a tablet refill or help with the phone.</p>
+            <form class="calls-form" id="didi-form">
+              <label>What do you need? <select id="didi-kind"><option value="escort">Doctor escort</option><option value="visit">Company visit</option><option value="refill">Tablet refill</option><option value="tech">Help with phone and forms</option></select></label>
+              <label>When <input id="didi-at" type="datetime-local" required></label>
+              <label>Who <select id="didi-who"><option value="">Any verified Didi nearby</option></select></label>
+              <label>For the Didi (optional) <input id="didi-notes" type="text" maxlength="300" placeholder="She likes to sit by the window"></label>
+              <label class="inline-check"><input type="checkbox" id="didi-share-meds" checked> Share her tablets in the briefing</label>
+              <label class="inline-check"><input type="checkbox" id="didi-share-mood"> Share how she has been feeling</label>
+              <div class="calls-actions"><button class="pill-action" type="submit">Book</button></div>
+            </form>
+            <p class="small" id="didi-status" aria-live="polite"></p>
+            <ul class="didi-bookings" id="didi-bookings"></ul>
+          </article>
+          <article class="glass span-6" aria-labelledby="plan-h" id="plan-card" hidden><div class="card-head"><h3 id="plan-h">Plan</h3></div>
+            <p class="small" id="plan-now"></p>
+            <p class="muted small">Help alerts, scam protection and medicine reminders are always included, whatever the plan.</p>
+            <ul class="plan-list" id="plan-list"></ul>
+            <p class="small" id="plan-status" aria-live="polite"></p>
+          </article>
+          <article class="glass span-6" aria-labelledby="ssn-h"><div class="card-head"><h3 id="ssn-h">Scams near you</h3></div>
+            <p class="muted small">Warnings checked by a person, shared by Saathi homes. Only the kind of scam is ever shared: no names, numbers or messages.</p>
+            <label class="inline-check"><input type="checkbox" id="ssn-receive"> Warn us about new scams (Saathi will tell them gently)</label>
+            <label class="inline-check"><input type="checkbox" id="ssn-share"> Let us share the kinds of scams Saathi sees here</label>
+            <ul class="insight-list" id="ssn-warnings"></ul>
+            <p class="small" id="ssn-status" aria-live="polite"></p>
+          </article>
+          <article class="glass span-6" aria-labelledby="legacy-h"><div class="card-head"><h3 id="legacy-h">Living Legacy</h3><a class="text-action" href="/legacy.html">Open the book</a></div><p class="muted small">Every story in the memory book, as an illustrated family book in every family language, with the narration. Print it or save it as a PDF.</p></article>
+          <article class="glass span-6" aria-labelledby="insight-h"><div class="card-head"><h3 id="insight-h">Saathi Insight</h3><a class="text-action" href="/doctor-report.html">Doctor report</a></div><p class="muted small" id="insight-summary">Looking at this week…</p><ul class="insight-list" id="insight-changes"></ul></article>
+          <article class="glass span-6" aria-labelledby="mid-h"><div class="card-head"><h3 id="mid-h">Medical ID card</h3><a class="text-action" href="/medical-id.html">Open and print</a></div><p class="muted small">One page for a paramedic or a hospital: allergies, conditions, medicines, who to call and the language they speak. Keep a copy on the fridge and in a handbag.</p></article>
+          <article class="glass span-6" aria-labelledby="mood-h"><h3 id="mood-h">How they've been feeling</h3><div class="mood" id="mood"></div></article>
+          <article class="glass span-12" aria-labelledby="routine-h"><div class="card-head"><h3 id="routine-h">Daily routine</h3><button class="text-action" type="button" id="manage-routine">Edit routine</button></div><p class="muted small" id="routine-note">Saathi uses this to answer "what should I do now?". Tablets are added automatically.</p><ol class="routine-list" id="routine"></ol></article>
+          <article class="glass span-6" aria-labelledby="door-h"><h3 id="door-h">Front door</h3><div class="list" id="door"></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="view-messages" data-view="messages" aria-labelledby="msg-h" hidden>
+        <h2 class="view-title" id="msg-h">Messages</h2>
+        <article class="glass thread-card">
+          <p class="translate-note" id="translate-note" hidden>Messages are delivered in the language they were written in, because this Saathi has no translation service yet. Whoever runs it can add one with <code>npm run setup</code> (Gemini or Google Cloud Translation).</p>
+          <div class="thread" id="thread"></div>
+          <form class="compose" id="compose">
+            <label class="sr-only" for="compose-text">Message</label>
+            <input id="compose-text" type="text" autocomplete="off" placeholder="Write in your language. They hear it in theirs.">
+            <button class="round-btn dark" type="submit" aria-label="Send message"></button>
+          </form>
+          <label class="inline-check private-toggle" id="compose-private-row" hidden><input type="checkbox" id="compose-private"> 🔒 Private: only family devices can read it, and Saathi will not translate it</label>
+          <div class="voice-row">
+            <button class="pill-action" id="record" type="button" aria-pressed="false">🎤 Record a voice note</button>
+            <span class="muted" id="record-status" aria-live="polite">They hear your actual voice, not a translation.</span>
+          </div>
+          <div class="voice-row family-voice">
+            <label class="sr-only" for="fv-med">Reminder for</label>
+            <select id="fv-med"><option value="">Any tablet reminder</option></select>
+            <button class="pill-action" id="fv-record" type="button" aria-pressed="false">🌼 Record a reminder in your voice</button>
+            <span class="muted" id="fv-status" aria-live="polite">Saathi plays it before tablet reminders. Your recording only, never an imitation.</span>
+          </div>
+          <ul class="fv-list" id="fv-list"></ul>
+        </article>
+      </section>
+
+      <section class="view" id="view-memories" data-view="memories" aria-labelledby="mem-h" hidden>
+        <h2 class="view-title" id="mem-h">Memories &amp; letters</h2>
+        <div class="grid">
+          <article class="glass span-5" aria-labelledby="letter-h">
+            <h3 id="letter-h">This week's letter</h3>
+            <p class="letter" id="letter"></p>
+            <button class="pill-action" id="letter-preview" type="button">Preview this week's letter</button>
+          </article>
+          <article class="glass span-7" aria-labelledby="stories-h">
+            <h3 id="stories-h">Memory book</h3>
+            <div class="stories" id="stories"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="view-home" data-view="home" aria-labelledby="home-h" hidden>
+        <div id="home-root"></div>
+      </section>
+
+      <section class="view" id="view-assistant" data-view="assistant" aria-labelledby="assistant-title" hidden>
+        <div id="assistant-root"></div>
+      </section>
+    </main>
+
+    <nav class="rail" aria-label="Sections">
+      <p class="rail-clock" id="clock">--:--</p>
+      <span class="rail-status" id="live" title="Live updates connected"></span>
+      <div class="rail-group">
+        <a class="rail-btn" href="#overview" data-nav="overview" aria-label="Overview"></a>
+        <a class="rail-btn" href="#care" data-nav="care" aria-label="Care: alerts, tablets and visits"><span class="badge" id="alert-badge" hidden></span></a>
+        <button class="rail-btn" type="button" id="open-invite" data-icon="userPlus" aria-label="Invite family"></button>
+        <button class="rail-btn" type="button" id="open-devices" data-icon="tablet" aria-label="Set up their device"></button>
+        <button class="rail-btn" type="button" id="open-settings" data-icon="gear" aria-label="Settings"></button>
+        <button class="rail-btn" type="button" id="open-security" data-icon="shield" aria-label="Security"></button>
+      </div>
+      <div class="rail-group">
+        <a class="rail-btn" href="#memories" data-nav="memories" aria-label="Memories and letters"></a>
+        <a class="rail-btn" href="#messages" data-nav="messages" aria-label="Messages"></a>
+        <a class="rail-btn" href="#assistant" data-nav="assistant" aria-label="Saathi assistant"></a>
+        <a class="rail-btn" href="#home" data-nav="home" aria-label="House map"></a>
+      </div>
+      <div class="rail-group rail-bottom">
+        <a class="rail-btn" href="/alexa.html" data-icon="mic" aria-label="Open their Saathi screen" id="open-elder-screen"></a>
+        <button class="rail-btn" type="button" id="logout" data-icon="logout" aria-label="Log out"></button>
+      </div>
+    </nav>
+  </div>
+
+  <dialog class="sheet" id="invite-dialog" aria-labelledby="invite-h">
+    <form method="dialog" class="sheet-form" id="invite-form">
+      <h2 id="invite-h">Invite someone to the circle</h2>
+      <p class="muted">They'll get an email with a link to join, and the updates meant for them, in their language.</p>
+      <div class="sheet-row">
+        <label>Name<input name="name" required autocomplete="off"></label>
+        <label>Relationship<input name="relationship" placeholder="grandson, neighbour…" required autocomplete="off"></label>
+      </div>
+      <div class="sheet-row">
+        <label>Email<input name="email" type="email" required autocomplete="off"></label>
+        <label>Language<select name="language"></select></label>
+      </div>
+      <label class="inline-check"><input type="checkbox" name="neighbour"> They're a neighbour (only emergencies)</label>
+      <p class="form-error" id="invite-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button class="text-action" value="cancel" formnovalidate>Cancel</button>
+        <button class="pill-action dark" id="invite-send" value="send">Send invite</button>
+      </div>
+      <div class="mail-status" id="mail-status"></div>
+      <div class="pending" id="pending-invites" hidden>
+        <h3>Waiting to join</h3>
+        <ul id="pending-list"></ul>
+      </div>
+    </form>
+    <div class="sheet-form invite-done" id="invite-done" hidden aria-live="polite">
+      <h2 id="invite-done-h">Invite sent</h2>
+      <p id="invite-done-text"></p>
+      <div class="share-row">
+        <button class="pill-action" type="button" id="copy-link">Copy invite link</button>
+        <a class="pill-action whatsapp" id="whatsapp-link" href="#" target="_blank" rel="noopener">Send on WhatsApp</a>
+      </div>
+      <div class="sheet-actions"><button class="pill-action dark" type="button" id="invite-close">Done</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet wide" id="settings-dialog" aria-labelledby="settings-h">
+    <form method="dialog" class="sheet-form" id="settings-form">
+      <h2 id="settings-h">Settings</h2>
+      <p class="muted" id="settings-intro">Only the person who set up this household can change these.</p>
+      <div class="sheet-row">
+        <label>Full name<input name="name" required autocomplete="off"></label>
+        <label>What the family calls them<input name="preferredName" autocomplete="off"></label>
+      </div>
+      <div class="sheet-row">
+        <label>Language they speak<select name="language"></select></label>
+        <label>They are referred to as<select name="pronoun"><option value="she">she / her</option><option value="he">he / him</option><option value="they">they / them</option></select></label>
+      </div>
+      <div class="sheet-row">
+        <label>Country<select name="country"></select></label>
+        <label>Emergency number<input name="emergencyNumber" inputmode="tel" autocomplete="off"></label>
+      </div>
+      <div class="sheet-row">
+        <label>Time zone<select name="timezone"></select></label>
+        <label>City<input name="city" autocomplete="off"></label>
+      </div>
+      <label>Home (shown to the neighbour in an emergency)<input name="home" autocomplete="off"></label>
+      <div class="sheet-row">
+        <label>Pharmacy<input name="pharmacyName" autocomplete="off"></label>
+        <label>Pharmacy phone<input name="pharmacyPhone" inputmode="tel" autocomplete="off"></label>
+      </div>
+      <fieldset class="checks-row">
+        <legend>Support they need</legend>
+        <label class="inline-check"><input type="checkbox" name="memorySupport"> Memory support</label>
+        <label class="inline-check"><input type="checkbox" name="hearingLoss"> Hearing loss</label>
+        <label class="inline-check"><input type="checkbox" name="lowVision"> Low vision</label>
+      </fieldset>
+      <label class="inline-check"><input type="checkbox" name="shareMoodWords"> Share their words with the family when they seem low</label>
+      <fieldset class="checks-row">
+        <legend>What Saathi may say out loud</legend>
+        <label class="inline-check"><input type="checkbox" name="alexaMedicinePurposes"> Medicine names and what they are for</label>
+        <label class="inline-check"><input type="checkbox" name="alexaDoctorNames"> Doctor names and clinic addresses</label>
+        <label class="inline-check"><input type="checkbox" name="alexaStoryText"> The words of saved stories</label>
+        <p class="muted">When off, Saathi says only "your 8:00 tablet" or "a doctor visit on Tuesday". Every time Saathi reads health details, it is written to the history in Security.</p>
+      </fieldset>
+      <fieldset class="checks-row">
+        <legend>For an emergency (on the Medical ID card)</legend>
+        <label>Allergies<input name="medAllergies" autocomplete="off" maxlength="300" placeholder="For example: penicillin, peanuts"></label>
+        <label>Conditions<input name="medConditions" autocomplete="off" maxlength="400" placeholder="For example: high blood pressure, diabetes"></label>
+        <label>Blood group<select name="medBlood"><option value="">Not known</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
+        <label>Doctor<input name="medDoctor" autocomplete="off" maxlength="80"></label>
+        <label>Doctor's phone<input name="medDoctorPhone" inputmode="tel" autocomplete="off" maxlength="30"></label>
+        <label>Family phone to call first<input name="medFamilyPhone" inputmode="tel" autocomplete="off" maxlength="30"></label>
+        <label>Other notes<input name="medNotes" autocomplete="off" maxlength="400" placeholder="For example: pacemaker, hearing aid in left ear"></label>
+      </fieldset>
+      <p class="form-error" id="settings-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button class="text-action" value="cancel" formnovalidate>Cancel</button>
+        <button class="pill-action dark" id="settings-save" value="save">Save</button>
+      </div>
+      <h3 class="devices-h">People in the circle</h3>
+      <ul class="device-list" id="member-list"></ul>
+      <h3 class="devices-h">Front door</h3>
+      <div class="doorbell" id="doorbell"></div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet wide" id="edit-dialog" aria-labelledby="edit-h">
+    <div class="sheet-form" id="edit-body"></div>
+  </dialog>
+
+  <dialog class="sheet" id="device-dialog" aria-labelledby="device-h">
+    <div class="sheet-form">
+      <h2 id="device-h">Set up their device</h2>
+      <p class="muted" id="device-intro">Use an Android tablet, a Nest Hub or an old phone. Keep it plugged in near where they sit.</p>
+      <ol class="pair-steps">
+        <li><span>1</span><div>On that device, open <strong id="pair-url">saathi/device</strong>, or scan this code with its camera.</div></li>
+        <li><span>2</span><div>Type this number:<p class="pair-code" id="pair-code" aria-live="polite">––– –––</p><p class="muted small" id="pair-expiry"></p></div></li>
+      </ol>
+      <div class="pair-qr" id="pair-qr" aria-hidden="true"></div>
+      <p class="form-error" id="pair-error" role="alert" hidden></p>
+      <div class="sheet-actions">
+        <button class="text-action" type="button" id="pair-new">New code</button>
+        <button class="pill-action dark" type="button" id="device-close">Done</button>
+      </div>
+      <h3 class="devices-h">Connected devices</h3>
+      <ul class="device-list" id="device-list"></ul>
+      <details class="advanced">
+        <summary>Connect an AI assistant over MCP (for developers)</summary>
+        <p class="muted">Gemini agents and any MCP client connect to Saathi as an MCP server. This creates a private key that reaches only this household.</p>
+        <button class="pill-action" type="button" id="pair-device">Create an assistant key</button>
+        <pre class="device-key" id="device-key" hidden></pre>
+      </details>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="private-dialog" aria-labelledby="private-h">
+    <div class="sheet-form" id="private-body"></div>
+  </dialog>
+
+  <dialog class="sheet wide" id="security-dialog" aria-labelledby="security-h">
+    <div class="sheet-form" id="security-body"></div>
+  </dialog>
+
+  <dialog class="sheet" id="approve-dialog" aria-labelledby="approve-h">
+    <div class="sheet-form approve">
+      <h2 id="approve-h">A device wants to join</h2>
+      <p>Look at the screen of the device you are setting up. Does it show these same three pictures?</p>
+      <p class="approve-emoji" id="approve-emoji" role="img" aria-label=""></p>
+      <p class="muted small" id="approve-what"></p>
+      <p class="muted small">Only approve if you are setting it up right now. If you did not ask for this, or the pictures are different, tap Not this one.</p>
+      <div class="sheet-actions">
+        <button class="pill-action" type="button" id="approve-no">Not this one</button>
+        <button class="pill-action dark" type="button" id="approve-yes">Approve</button>
+      </div>
+    </div>
+  </dialog>
+
+  <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" hidden>
+  <script type="module" src="family.js"></script>
+</body>
+</html>

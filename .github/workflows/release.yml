@@ -1,0 +1,203 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, for example 1.0.0'
+        required: true
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:core
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm test
+        env:
+          SAATHI_METRICS: 'off'
+      - name: Release notes from CHANGELOG.md
+        run: |
+          version="${VERSION#v}"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
+          echo "PLAIN=$version" >> "$GITHUB_ENV"
+          awk -v v="$version" '$0 ~ "^## \\[?"v"\\]?" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Software bill of materials and source archive
+        run: |
+          npm sbom --omit=dev --sbom-format cyclonedx > "saathi-$PLAIN.cdx.json"
+          npm sbom --omit=dev --sbom-format spdx > "saathi-$PLAIN.spdx.json"
+          git archive --format=tar.gz --prefix="saathi-$PLAIN/" -o "saathi-$PLAIN.tar.gz" HEAD
+          sha256sum "saathi-$PLAIN.tar.gz" "saathi-$PLAIN.cdx.json" "saathi-$PLAIN.spdx.json" > SHA256SUMS
+      - name: Publish the Docker image
+        id: image
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          docker build --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.version=$PLAIN" -t "$image:$PLAIN" -t "$image:latest" .
+          docker push "$image:$PLAIN"
+          docker push "$image:latest"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image:$PLAIN" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
+      - name: Prove where the source archive came from
+        id: provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: |
+            saathi-${{ env.PLAIN }}.tar.gz
+            saathi-${{ env.PLAIN }}.cdx.json
+            saathi-${{ env.PLAIN }}.spdx.json
+      - name: Prove where the Docker image came from
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - name: Attach the SBOM to the Docker image
+        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          sbom-path: saathi-${{ env.PLAIN }}.spdx.json
+          push-to-registry: true
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp "${{ steps.provenance.outputs.bundle-path }}" "saathi-$PLAIN.intoto.jsonl"
+          cp "${{ steps.provenance.outputs.bundle-path }}" "saathi-$PLAIN.sigstore.json"
+          gh release create "$TAG" --title "Saathi $TAG" --notes-file notes.md --target "$GITHUB_SHA" \
+            "saathi-$PLAIN.tar.gz" "saathi-$PLAIN.cdx.json" "saathi-$PLAIN.spdx.json" SHA256SUMS "saathi-$PLAIN.intoto.jsonl" "saathi-$PLAIN.sigstore.json"
+  windows:
+    needs: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@f08ac54821369508305fcb9e0121ec6e30ae9ada
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: cargo build --locked --release -p saathi-broker -p saathi-launcher
+      - name: Fetch Sahay from its own repository
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target\release | Out-Null
+          Invoke-WebRequest -UseBasicParsing https://github.com/akshatinnovate-png/Sahay/releases/latest/download/Sahay.exe -OutFile target\release\sahay.exe
+          if ((Get-Item target\release\sahay.exe).Length -lt 100000) { throw 'Sahay.exe did not download' }
+      - run: npm run build:core
+      - run: node scripts/package-windows.js
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $plain = $env:VERSION -replace '^v', ''
+          "PLAIN=$plain" | Out-File -Append $env:GITHUB_ENV
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { throw 'Inno Setup could not be installed' } }
+          & $iscc "/DAppVersion=$plain" installer\saathi.iss
+          if ($LASTEXITCODE) { throw 'the installer did not build' }
+          $file = "build\out\Saathi-Setup-$plain.exe"
+          (Get-FileHash $file -Algorithm SHA256).Hash.ToLower() + "  Saathi-Setup-$plain.exe" | Out-File -Encoding ascii build\out\SHA256SUMS-windows
+      - name: Prove where the installer came from
+        id: provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: build/out/Saathi-Setup-${{ env.PLAIN }}.exe
+      - name: Attach the installer to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          Copy-Item "${{ steps.provenance.outputs.bundle-path }}" "build/out/Saathi-Setup-$env:PLAIN.exe.intoto.jsonl"
+          Copy-Item "${{ steps.provenance.outputs.bundle-path }}" "build/out/Saathi-Setup-$env:PLAIN.exe.sigstore.json"
+          gh release upload "v$env:PLAIN" "build/out/Saathi-Setup-$env:PLAIN.exe" build/out/SHA256SUMS-windows "build/out/Saathi-Setup-$env:PLAIN.exe.intoto.jsonl" "build/out/Saathi-Setup-$env:PLAIN.exe.sigstore.json" --repo $env:GITHUB_REPOSITORY --clobber
+  android:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
+        with:
+          gradle-version: '8.11.1'
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          plain="${VERSION#v}"
+          echo "PLAIN=$plain" >> "$GITHUB_ENV"
+          store="$RUNNER_TEMP/saathi.jks"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$store"
+            { echo "SAATHI_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"; echo "SAATHI_KEY_ALIAS=$KEY_ALIAS"; echo "SAATHI_KEY_PASSWORD=$KEY_PASSWORD"; echo "SIGNING=family"; } >> "$GITHUB_ENV"
+          else
+            pass="$(openssl rand -hex 24)"
+            echo "::add-mask::$pass"
+            keytool -genkeypair -keystore "$store" -storetype PKCS12 -storepass "$pass" -keypass "$pass" -alias saathi -keyalg EC -groupname secp256r1 -validity 10000 -dname "CN=Saathi one-off build" > /dev/null
+            { echo "SAATHI_KEYSTORE_PASSWORD=$pass"; echo "SAATHI_KEY_ALIAS=saathi"; echo "SAATHI_KEY_PASSWORD=$pass"; echo "SIGNING=one-off"; } >> "$GITHUB_ENV"
+            echo "::warning::No Android signing secrets are set, so this APK is signed with a one-off key. It installs, but cannot update the previous version in place. See docs/ANDROID.md."
+          fi
+          echo "SAATHI_KEYSTORE=$store" >> "$GITHUB_ENV"
+      - run: gradle --no-daemon -p android testDebugUnitTest lintRelease assembleRelease
+      - name: Name, check and fingerprint the APK
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          out="Saathi-$PLAIN.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$out"
+          "$apksigner" verify --verbose --print-certs "$out" | tee apk-signature.txt
+          echo "Signed with: $SIGNING key" >> apk-signature.txt
+          sha256sum "$out" > SHA256SUMS-android
+          rm -f "$RUNNER_TEMP/saathi.jks"
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        id: provenance
+        with:
+          subject-path: Saathi-${{ env.PLAIN }}.apk
+      - name: Attach the APK to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp "${{ steps.provenance.outputs.bundle-path }}" "Saathi-$PLAIN.apk.intoto.jsonl"
+          cp "${{ steps.provenance.outputs.bundle-path }}" "Saathi-$PLAIN.apk.sigstore.json"
+          gh release upload "v$PLAIN" "Saathi-$PLAIN.apk" SHA256SUMS-android apk-signature.txt "Saathi-$PLAIN.apk.intoto.jsonl" "Saathi-$PLAIN.apk.sigstore.json" --repo "$GITHUB_REPOSITORY" --clobber

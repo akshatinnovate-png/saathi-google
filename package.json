@@ -1,0 +1,98 @@
+{
+  "name": "saathi-google",
+  "version": "2.0.0",
+  "description": "Saathi on Google: an elder-care companion with Gemini, Firestore, Cloud Translation, Natural Language, Text-to-Speech, Pub/Sub, Cloud Storage, Maps and Firebase Authentication, plus Saathi Didis, paid neighbourhood care work for women.",
+  "main": "src/index.js",
+  "bin": {
+    "saathi-mcp": "bin/saathi-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "LICENSE",
+    "README.md",
+    "PRIVACY.md",
+    "SECURITY.md"
+  ],
+  "homepage": "https://github.com/akshatinnovate-png/saathi-google#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akshatinnovate-png/saathi-google.git"
+  },
+  "bugs": {
+    "url": "https://github.com/akshatinnovate-png/saathi-google/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-include=src/** --test-coverage-lines=90 --test-coverage-branches=80 test/*.test.js",
+    "inspect": "npx @modelcontextprotocol/inspector",
+    "eval": "node evals/safety.js && node evals/routing.js",
+    "a11y": "node scripts/a11y.js",
+    "smoke": "node scripts/smoke.js",
+    "setup": "node scripts/setup.js",
+    "demo": "node scripts/demo.js",
+    "add-ring": "npm install --no-save --no-audit --no-fund ring-client-api@14.3.0",
+    "build:core": "node scripts/build-core.js",
+    "check:core": "node scripts/build-core.js --check",
+    "key-status": "node scripts/key.js status",
+    "protect-key": "node scripts/key.js protect",
+    "restore-key": "node scripts/key.js restore",
+    "reach": "node scripts/reach.js",
+    "attack": "node scripts/attack.js",
+    "package:windows": "node scripts/package-windows.js",
+    "e2e": "node scripts/e2e.js",
+    "lint": "eslint .",
+    "deploy": "node scripts/deploy-cloud-run.js"
+  },
+  "keywords": [
+    "google-cloud",
+    "gemini",
+    "firebase",
+    "firestore",
+    "mcp",
+    "accessibility",
+    "eldercare",
+    "women-entrepreneurship"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/noto-sans-devanagari": "^5.3.0",
+    "@google-cloud/firestore": "^7.11.6",
+    "@google-cloud/storage": "^7.22.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@noble/post-quantum": "^0.7.1",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "7.5.1",
+    "google-auth-library": "^10.9.1",
+    "jose": "^6.2.13",
+    "nodemailer": "^10.2.1",
+    "qrcode": "^1.5.4",
+    "three": "^0.186.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "axe-core": "^4.14.0",
+    "eslint": "^10.14.0",
+    "fast-check": "^3.23.2",
+    "globals": "^17.13.0",
+    "playwright-core": "1.56",
+    "rxjs": "^7.8.2"
+  },
+  "type": "module",
+  "overrides": {
+    "minimatch": "11.0.4"
+  }
+}
