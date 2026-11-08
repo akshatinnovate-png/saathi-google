@@ -4,7 +4,7 @@
 
 Saathi keeps an elder safe, independent and close to family, in their own language. It reminds her about her tablets and stops double doses. It asks how she is and tells the family gently when she sounds low. It translates family messages both ways, and it tells her who is at the door. It warns her about scam calls, and it escalates a call for help until someone is on the way. **Saathi Didis** turns the care that neighbourhood women already give into paid, trusted work: families book a verified Didi for a doctor escort, a visit, a tablet refill or help with the phone, and pay her straight to her UPI.
 
-Built on **Gemini, Google Cloud and Firebase**. The story, every feature, the plan and the buildathon answers are in **[MASTER.md](MASTER.md)**.
+**Saathi on Google 1.0.0 is Saathi 1.4.0, with Sahay on Windows and Android, plus Saathi Didis, rebuilt on Gemini, Google Cloud and Firebase.** The story, every feature, the plan and the buildathon answers are in **[MASTER.md](MASTER.md)**.
 
 | | | |
 |---|---|---|
