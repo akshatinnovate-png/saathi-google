@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.2.0] - 2026-11-10
+
+The family app is easier to find your way around, and setting up takes one tap.
+
+### Getting around
+- **Labelled navigation** with five places: Home, Care, Messages, Memories and More. On a phone it is a fixed bar of five tabs.
+- **Care is split into tabs** (Today, Health, Safety, Help and benefits, Extras), and the app remembers the last one you used.
+- **Search everything** with the Search button, `/` or Ctrl+K: any page, card or action. `g` then a letter jumps between pages, and `?` lists the shortcuts.
+- **Links to a card**, such as `/family.html#care/haq`, open the right tab and highlight the card.
+- **More** gathers the assistant, the house map, their screen, the reports, invites, devices, settings and security as labelled tiles.
+
+### Home
+- **Quick actions**: send a message, scan a prescription, book a Didi, record doctor notes, share today's summary.
+- **Needs attention**: calls for help, tablets not confirmed, tablets running low, visits nobody is taking her to, and benefit deadlines, most urgent first, each with one button that deals with it.
+- **Finish setting up**: a checklist with a progress ring, each step one tap away.
+- **Today**: tablets, routine and visits in one timeline.
+
+### One-tap protection
+- **Recommended protection** shows exactly what will change (fall checks and scam warnings), turns it on in one tap, and offers Undo. It never turns on sharing, only the owner can use it, and each change is written to the security history.
+- The device pairing link can be shared in one tap; the six-digit code is never in the link.
+
+### Polish
+- One style for every field, switches for on and off settings, and the Raksha switches save themselves.
+- Loading placeholders, clearer empty states, a notice when you are offline, and a Display menu with large text, high contrast and less motion.
+- Saathi can be installed to the home screen, with shortcuts to Messages, Care, Scan and Didis.
+
 ## [1.1.0] - 2026-11-08
 
 Five new features, each built on Google and each tested.

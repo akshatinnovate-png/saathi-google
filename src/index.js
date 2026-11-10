@@ -33,6 +33,7 @@ import { createDoctorNotes } from './features/doctorNotes.js';
 import { createHaq } from './features/haq.js';
 import { createSangat } from './features/sangat.js';
 import { createRaksha } from './features/raksha.js';
+import { createSetup } from './features/setup.js';
 import { createSessions, sessionSecret } from './accounts/sessions.js';
 import { createGoogle, createVault } from './accounts/google.js';
 import { createMailer } from './mail/mailer.js';
@@ -200,12 +201,13 @@ const doctorNotes = createDoctorNotes({ llm, services, translator: services.tran
 const haq = createHaq({ llm, services, translator: services.translator });
 const sangat = createSangat({ store: services.store, services, llm });
 const raksha = createRaksha({ services });
+const setup = createSetup({ services, accounts, security, haq });
 const impact = createImpact({ services, store: services.store, includeDemo: config.demo });
 const internalVerify = config.google.workflows && config.auth.publicUrl && config.resources.runnerServiceAccount
   ? createOidcVerifier({ audience: config.auth.publicUrl, serviceAccount: config.resources.runnerServiceAccount })
   : null;
 const webConfig = { firebase: config.google.firebaseWebConfig, vapidKey: config.google.vapidKey };
-const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis, live, push, impact, stt, firebase, internalVerify, webConfig, scan, doctorNotes, haq, sangat, raksha });
+const app = createApp({ config, services, simulatorFor, assistantFor, verifier, optionalVerifier, accounts, sessions, allowedHosts, ringSimulator, google, familyMail, doorbell, security, audit, keyring, vault: familyVault, sahayQueue, guide, scamNetwork, billing: billing.enabled ? billing : null, calls: calls.enabled ? calls : null, didis, live, push, impact, stt, firebase, internalVerify, webConfig, scan, doctorNotes, haq, sangat, raksha, setup });
 
 doorbell.startAll().catch((err) => console.error('Ring listeners failed to start:', err.message));
 
