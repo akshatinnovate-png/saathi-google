@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0] - 2026-11-10
+
+### Scam Shield: Gemma on her phone
+- The Saathi Android app checks incoming texts and WhatsApp messages for scams on her phone. A fast rules check runs first; when a message is unclear, **Gemma runs on the phone itself** (MediaPipe LLM Inference) to decide.
+- When a message looks like a scam (a fake KYC or bank message, an OTP request, a "digital arrest" threat, a prize, job or investment offer, or someone pretending to be family on a new number), she gets a warning in her language and her Saathi screen says it aloud.
+- The family is told only the kind of scam and whether a text or WhatsApp message carried it. **The message itself never leaves her phone.**
+- Real bank messages, and OTPs that say not to share them, are left alone.
+- The model downloads once, over Wi-Fi, only on phones with enough memory, from this Saathi or any https address, and is checked against its SHA-256 before use. Without a model, the rules check still works.
+- Scam Shield is part of the one-tap recommended protection, and has its own card in Care, Safety.
+
 ## [1.2.0] - 2026-11-10
 
 The family app is easier to find your way around, and setting up takes one tap.
