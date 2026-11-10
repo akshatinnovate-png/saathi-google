@@ -65,6 +65,7 @@ const vars = {
   ...(env.SAATHI_PUBLIC_URL ? { SAATHI_WORKFLOWS: 'true', SAATHI_WORKFLOWS_LOCATION: region } : {}),
   ...(demo ? { SAATHI_DEMO: 'true', SAATHI_FIRESTORE: 'false' } : {}),
   ...(env.SAATHI_PUBLIC_URL ? { SAATHI_PUBLIC_URL: env.SAATHI_PUBLIC_URL } : {}),
+  ...Object.fromEntries(['SAATHI_GEMMA_MODEL_URL', 'SAATHI_GEMMA_MODEL_SHA256', 'SAATHI_GEMMA_MODEL_BYTES', 'SAATHI_GEMMA_MODEL_NAME'].filter((k) => env[k]).map((k) => [k, env[k]])),
   ...(env.SAATHI_GOOGLE_CLIENT_ID ? { SAATHI_GOOGLE_CLIENT_ID: env.SAATHI_GOOGLE_CLIENT_ID } : {}),
 };
 gcloud([

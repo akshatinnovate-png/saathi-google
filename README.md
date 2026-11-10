@@ -26,6 +26,7 @@ Saathi keeps an elder safe, independent and close to family, in their own langua
 | **Google Maps** (Routes API) | Matches families with Didis by real travel time; a map link in a Raksha alert | `src/google/maps.js`, `src/didis/didis.js` |
 | **Google Meet** | Saathi Sangat circles, joined with one button | `src/features/sangat.js` |
 | **Firebase Authentication** | Email and password accounts; Didis sign in with just their phone number | `src/google/firebaseAuth.js`, `public/firebase-web.js` |
+| **Gemma** (on device, MediaPipe LLM Inference) | Scam Shield: checks her texts and WhatsApp messages for scams on her phone, so the messages never leave it | `android/.../shield/`, `src/features/scamShield.js` |
 | **Gemini Live** | Aaji just talks, in Marathi, and can interrupt; Saathi's tools work mid-conversation | `src/google/live.js`, `public/live.js` |
 | **Gemini image generation** | A Didi's profile card to share on WhatsApp | `src/google/image.js` |
 | **Speech-to-Text** | A Didi speaks her visit note in Marathi; the family reads it in English | `src/google/speech.js` |
@@ -68,6 +69,10 @@ npm run deploy -- --project=YOUR_PROJECT --region=asia-south1
 For a public demo that judges can open (the fictional Deshpande family, resetting on restart), add `--demo`.
 
 The script enables the APIs and creates the Firestore database, a private media bucket, the Pub/Sub topic and a service account with only the roles Saathi needs. It also creates a BigQuery dataset fed by a Pub/Sub subscription, and the Cloud Workflows escalation. It then deploys to Cloud Run with Gemini on Vertex AI. Add `--dry-run` to see every command first. When it prints the service address, set `SAATHI_PUBLIC_URL` to it and run the command once more.
+
+## New in 1.3.0: Scam Shield, with Gemma on her phone
+
+The Saathi Android app checks incoming texts and WhatsApp messages for scams, with **Gemma running on the phone itself**. She is warned in her language; the family hears only what kind of scam it was. The message never leaves her phone. To use Gemma, put a Gemma LiteRT model on your Saathi with `SAATHI_GEMMA_MODEL_FILE` (or `SAATHI_GEMMA_MODEL_URL`) and `SAATHI_GEMMA_MODEL_SHA256`; without one, a built-in rules check still protects her.
 
 ## New in 1.2.0: easier to use
 
