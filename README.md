@@ -69,6 +69,16 @@ For a public demo that judges can open (the fictional Deshpande family, resettin
 
 The script enables the APIs and creates the Firestore database, a private media bucket, the Pub/Sub topic and a service account with only the roles Saathi needs. It also creates a BigQuery dataset fed by a Pub/Sub subscription, and the Cloud Workflows escalation. It then deploys to Cloud Run with Gemini on Vertex AI. Add `--dry-run` to see every command first. When it prints the service address, set `SAATHI_PUBLIC_URL` to it and run the command once more.
 
+## New in 1.2.0: easier to use
+
+<img src="docs/screenshots/36-home.webp" alt="The family home screen with quick actions, what needs attention, setup progress and today's timeline" width="640"> <img src="docs/screenshots/39-more-phone.webp" alt="The More page on a phone with labelled tiles and a five-tab bar" width="200">
+
+- **Five labelled places** (Home, Care, Messages, Memories, More), and Care in tabs.
+- **Needs attention**: what needs someone today, each with one button.
+- **One-tap recommended protection**, shown before it changes anything, with Undo. Only the owner can use it, and it never turns on sharing.
+- **Search everything** with `/` or Ctrl+K, and keyboard shortcuts (`?`).
+- **Install to the home screen**, a setup checklist, and a Display menu (large text, high contrast, less motion).
+
 ## New in 1.1.0
 
 - **Saathi Scan:** photograph a prescription or tablet strip; Gemini fills in the tablet list (it understands "1-0-1", BD, HS) and warns about duplicates and risky pairs. The family checks it before anything is saved.
@@ -93,7 +103,7 @@ Tablets by colour and purpose, with no double doses. Proactive reminders. Family
 ## Tests and checks
 
 ```sh
-npm test          # 200+ tests, offline
+npm test          # 210+ tests, offline
 npm run coverage  # at least 90% of lines and 80% of branches
 npm run lint
 npm run a11y      # axe-core across every screen, including the Didi app
