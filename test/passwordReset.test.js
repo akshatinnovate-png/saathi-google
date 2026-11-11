@@ -17,41 +17,41 @@ test('a reset link works once, expires after 30 minutes, and never says whether 
   const accounts = createAccounts({ store: services.store, services, clock: () => now });
   await accounts.signUp({ email: 'Kamala@Example.com', password: OLD, name: 'Kamala' });
 
-  assert.equal(await accounts.startPasswordReset('nobody@example.com'), null);
-  assert.equal(await accounts.startPasswordReset('not an email'), null);
-  const first = await accounts.startPasswordReset(' KAMALA@example.com ');
+  assert.equal(await accounts.startAccountRecovery('nobody@example.com'), null);
+  assert.equal(await accounts.startAccountRecovery('not an email'), null);
+  const first = await accounts.startAccountRecovery(' KAMALA@example.com ');
   assert.equal(first.email, 'kamala@example.com');
   assert.equal(first.minutes, 30);
   assert.ok(first.token.length >= 40);
-  const stored = await services.store.list('passwordResets');
+  const stored = await services.store.list('recoveryLinks');
   assert.equal(stored.length, 1);
   assert.ok(!JSON.stringify(stored).includes(first.token), 'only a hash of the token is stored');
 
-  const second = await accounts.startPasswordReset('kamala@example.com');
-  assert.equal((await services.store.list('passwordResets')).length, 1, 'a new request replaces the old link');
-  await assert.rejects(accounts.finishPasswordReset(first.token, NEW), /expired or was already used/);
+  const second = await accounts.startAccountRecovery('kamala@example.com');
+  assert.equal((await services.store.list('recoveryLinks')).length, 1, 'a new request replaces the old link');
+  await assert.rejects(accounts.finishAccountRecovery(first.token, NEW), /expired or was already used/);
 
-  await assert.rejects(accounts.finishPasswordReset(second.token, 'short'), (e) => e.code === 'password');
-  const done = await accounts.finishPasswordReset(second.token, NEW);
+  await assert.rejects(accounts.finishAccountRecovery(second.token, 'short'), (e) => e.code === 'password');
+  const done = await accounts.finishAccountRecovery(second.token, NEW);
   assert.equal(done.email, 'kamala@example.com');
   await assert.rejects(accounts.login({ email: 'kamala@example.com', password: OLD }), /do not match/);
   assert.equal((await accounts.login({ email: 'kamala@example.com', password: NEW })).email, 'kamala@example.com');
-  await assert.rejects(accounts.finishPasswordReset(second.token, 'another fine password 8'), /expired or was already used/);
-  await assert.rejects(accounts.finishPasswordReset('', NEW), /expired/);
+  await assert.rejects(accounts.finishAccountRecovery(second.token, 'another fine password 8'), /expired or was already used/);
+  await assert.rejects(accounts.finishAccountRecovery('', NEW), /expired/);
 
-  const late = await accounts.startPasswordReset('kamala@example.com');
+  const late = await accounts.startAccountRecovery('kamala@example.com');
   now = new Date(now.getTime() + 31 * 60_000);
-  await assert.rejects(accounts.finishPasswordReset(late.token, 'yet another fine password 9'), /expired/);
-  assert.equal((await services.store.list('passwordResets')).length, 0, 'an expired link is cleaned up');
+  await assert.rejects(accounts.finishAccountRecovery(late.token, 'yet another fine password 9'), /expired/);
+  assert.equal((await services.store.list('recoveryLinks')).length, 0, 'an expired link is cleaned up');
 });
 
 test('demo and Google-only accounts get no reset link', async () => {
   const services = testServices();
   const accounts = createAccounts({ store: services.store, services, demo: true });
   await accounts.ensureDemo();
-  assert.equal(await accounts.startPasswordReset('riya@saathi.demo'), null);
+  assert.equal(await accounts.startAccountRecovery('riya@saathi.demo'), null);
   await accounts.socialLogin({ email: 'g@example.com', name: 'G', sub: 'google-1' });
-  assert.equal(await accounts.startPasswordReset('g@example.com'), null);
+  assert.equal(await accounts.startAccountRecovery('g@example.com'), null);
 });
 
 let server;

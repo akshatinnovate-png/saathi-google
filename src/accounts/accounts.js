@@ -343,7 +343,7 @@ export function createAccounts({ store, services, identity = null, demo = false,
       return publicAccount(await store.get('accounts', email));
     },
 
-    async startPasswordReset(rawEmail) {
+    async startAccountRecovery(rawEmail) {
       const email = normaliseEmail(rawEmail);
       if (!EMAIL.test(email)) return null;
       const account = await store.get('accounts', email);
@@ -352,18 +352,18 @@ export function createAccounts({ store, services, identity = null, demo = false,
         if (identity?.sendPasswordReset && account.provider === identity.kind) await identity.sendPasswordReset(email).catch(() => {});
         return null;
       }
-      for (const old of await store.list('passwordResets')) if (old.email === email) await store.remove('passwordResets', old.id);
+      for (const old of await store.list('recoveryLinks')) if (old.email === email) await store.remove('recoveryLinks', old.id);
       const token = randomBytes(32).toString('base64url');
       const expiresAt = new Date(clock().getTime() + RESET_MINUTES * 60_000).toISOString();
-      await store.put('passwordResets', { id: hashToken(token), email, expiresAt, createdAt: clock().toISOString() });
+      await store.put('recoveryLinks', { id: hashToken(token), email, expiresAt, createdAt: clock().toISOString() });
       return { token, email, name: account.name ?? null, minutes: RESET_MINUTES };
     },
 
-    async finishPasswordReset(token, next) {
+    async finishAccountRecovery(token, next) {
       const id = hashToken(String(token ?? ''));
-      const reset = token ? await store.get('passwordResets', id) : null;
+      const reset = token ? await store.get('recoveryLinks', id) : null;
       if (!reset || Date.parse(reset.expiresAt) < clock().getTime()) {
-        if (reset) await store.remove('passwordResets', id);
+        if (reset) await store.remove('recoveryLinks', id);
         throw new AuthError('reset', 'This reset link has expired or was already used. Ask for a new one.');
       }
       const account = await store.get('accounts', reset.email);
@@ -371,7 +371,7 @@ export function createAccounts({ store, services, identity = null, demo = false,
       const problem = passwordProblem(next, { email: reset.email, name: account.name });
       if (problem) throw new AuthError('password', problem);
       await rejectBreached(next);
-      await store.remove('passwordResets', id);
+      await store.remove('recoveryLinks', id);
       await store.update('accounts', reset.email, { passwordHash: await hashPassword(next), passwordChangedAt: clock().toISOString() });
       await throttleClear(reset.email);
       return publicAccount(await store.get('accounts', reset.email));
