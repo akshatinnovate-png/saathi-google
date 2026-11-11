@@ -7,7 +7,7 @@ import { TOOL_SCOPES } from '../auth/scopes.js';
 import { mayCallTool } from '../security/core.js';
 import { t } from '../domain/i18n.js';
 
-export const SERVER_INFO = { name: 'saathi', title: 'Saathi - a companion for elders and the families who love them', version: '1.4.0' };
+export const SERVER_INFO = { name: 'saathi', title: 'Saathi - a companion for elders and the families who love them', version: '1.4.1' };
 
 export const INSTRUCTIONS = `Saathi supports an older adult (read saathi://elder/profile for their name, languages and accessibility needs) and their care circle.
 Speak in short, warm sentences, one idea at a time, in the language they used. Never correct or quiz their memory; gently orient instead (use what_day_is_it and who_is).

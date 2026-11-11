@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-11-11
+
+### Windows installer fixes
+- Installing over an older Saathi no longer stops with "Access is denied": the installer now closes every running Saathi process, including its own Node.js, before replacing files.
+- The "Where is my key" shortcut no longer has a question mark in its name, which Windows does not allow and which made setup fail at "Creating shortcuts".
+
 ## [1.4.0] - 2026-11-11
 
 ### Forgot your password?
