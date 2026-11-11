@@ -53,8 +53,13 @@
           <input id="email" name="email" type="email" autocomplete="email" required>
         </div>
         <div class="field" id="field-password">
-          <label for="password">Password</label>
+          <label for="password" id="password-label">Password</label>
           <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <a class="auth-forgot" href="#forgot" id="forgot-link">Forgot password?</a>
+        </div>
+        <div class="field" id="field-confirm" hidden>
+          <label for="password2">Type the new password again</label>
+          <input id="password2" name="password2" type="password" autocomplete="new-password">
         </div>
         <div class="field" id="field-code" hidden>
           <label for="code" id="code-label">Confirmation code</label>

@@ -2,13 +2,16 @@ const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const asked = params.get('next');
 const next = typeof asked === 'string' && /^\/(?!\/|\\)[\w\-./?=&#%]*$/.test(asked) ? asked : null;
-let mode = params.get('step') === 'code' ? 'code' : location.hash === '#signup' ? 'signup' : 'login';
+const resetToken = params.get('reset');
+let mode = resetToken ? 'reset' : params.get('step') === 'code' ? 'code' : location.hash === '#signup' ? 'signup' : location.hash === '#forgot' ? 'forgot' : 'login';
 let providers = { identity: null, demo: false, social: [] };
 
 const COPY = {
   login: { title: 'Log in to Saathi', sub: 'Your family, closer every day', submit: 'Continue with Email', switch: ["Don't have an account?", 'Sign up', '#signup'] },
   signup: { title: 'Create your account', sub: 'Set up Saathi for someone you love', submit: 'Create account', switch: ['Already have an account?', 'Log in', '#login'] },
   confirm: { title: 'Check your email', sub: 'We sent a six-digit code to confirm it is you', submit: 'Confirm and continue', switch: ["Didn't get it?", 'Send a new code', '#resend'] },
+  forgot: { title: 'Forgot your password?', sub: 'Type your email and we will send you a link to choose a new one', submit: 'Send the reset link', switch: ['Remembered it?', 'Log in', '#login'] },
+  reset: { title: 'Choose a new password', sub: 'At least 10 characters. Use a few words that mean something to you', submit: 'Save the new password', switch: ['Changed your mind?', 'Log in', '#login'] },
   code: { title: 'One more step', sub: 'Type the 6 numbers your authenticator app shows now', submit: 'Verify and continue', switch: ['Lost your phone?', 'Use a recovery code', '#recovery'] },
 };
 
@@ -20,15 +23,19 @@ function render() {
   $('auth-submit').textContent = c.submit;
   const coded = mode === 'confirm' || mode === 'code';
   $('field-name').hidden = mode !== 'signup';
-  $('field-email').hidden = coded;
-  $('field-password').hidden = coded;
+  $('field-email').hidden = coded || mode === 'reset';
+  $('field-password').hidden = coded || mode === 'forgot';
+  $('field-confirm').hidden = mode !== 'reset';
+  $('forgot-link').hidden = mode !== 'login';
+  $('password-label').textContent = mode === 'reset' ? 'New password' : 'Password';
   $('field-code').hidden = !coded;
   $('code-label').textContent = mode === 'code' ? 'Code from your app, or a recovery code' : 'Confirmation code';
   $('code').inputMode = mode === 'code' ? 'text' : 'numeric';
-  $('auth-social').hidden = coded || !socialAvailable;
-  document.querySelector('.auth-or').hidden = coded || !socialAvailable;
+  const plain = coded || mode === 'forgot' || mode === 'reset';
+  $('auth-social').hidden = plain || !socialAvailable;
+  document.querySelector('.auth-or').hidden = plain || !socialAvailable;
   $('auth-passkey').hidden = mode !== 'login' || !passkeysAvailable;
-  $('password').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  $('password').autocomplete = mode === 'signup' || mode === 'reset' ? 'new-password' : 'current-password';
   $('switch-link').textContent = c.switch[1];
   $('switch-link').href = c.switch[2];
   $('auth-switch').firstChild.textContent = `${c.switch[0]} `;
@@ -52,6 +59,8 @@ $('auth-form').addEventListener('submit', async (e) => {
   const email = $('email').value.trim();
   const password = $('password').value;
   if (mode === 'code') return verifyCode();
+  if (mode === 'forgot') return sendReset(email);
+  if (mode === 'reset') return saveReset(password);
   if (mode !== 'confirm' && (!email || !password)) return showError('Please enter your email address and password.');
   $('auth-submit').disabled = true;
   try {
@@ -74,6 +83,40 @@ $('auth-form').addEventListener('submit', async (e) => {
   }
 });
 
+async function sendReset(email) {
+  if (!email) return showError('Please enter your email address.');
+  $('auth-submit').disabled = true;
+  try {
+    await post('/auth/forgot', { email });
+    $('auth-sub').textContent = `If ${email} has a Saathi account, a reset link is on its way. It works once, for 30 minutes. Check your spam folder too.`;
+    showError('');
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    $('auth-submit').disabled = false;
+  }
+}
+
+async function saveReset(password) {
+  if (!password) return showError('Please type a new password.');
+  if (password !== $('password2').value) return showError('The two passwords are not the same.');
+  $('auth-submit').disabled = true;
+  try {
+    const out = await post('/auth/reset', { token: resetToken, password });
+    history.replaceState(null, '', location.pathname);
+    mode = 'login';
+    render();
+    $('email').value = out.email ?? '';
+    $('password').value = '';
+    $('auth-sub').textContent = 'Your password is changed, and you were signed out everywhere else. Log in with the new password.';
+    $('password').focus();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    $('auth-submit').disabled = false;
+  }
+}
+
 async function verifyCode() {
   const code = $('code').value.trim();
   if (!code) return showError('Please type the code.');
@@ -89,6 +132,14 @@ async function verifyCode() {
     $('auth-submit').disabled = false;
   }
 }
+
+$('forgot-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  mode = 'forgot';
+  history.replaceState(null, '', `${location.pathname}#forgot`);
+  render();
+  $('email').focus();
+});
 
 $('auth-passkey').addEventListener('click', async () => {
   showError('');
@@ -124,8 +175,9 @@ $('switch-link').addEventListener('click', async (e) => {
     }
     return;
   }
+  if (mode === 'reset') history.replaceState(null, '', location.pathname);
   mode = mode === 'login' ? 'signup' : 'login';
-  history.replaceState(null, '', `${location.pathname}${location.search}${mode === 'signup' ? '#signup' : ''}`);
+  history.replaceState(null, '', `${location.pathname}${resetToken ? '' : location.search}${mode === 'signup' ? '#signup' : ''}`);
   render();
   (mode === 'signup' ? $('name') : $('email')).focus();
 });

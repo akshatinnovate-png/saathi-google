@@ -1,5 +1,5 @@
 import { scopeStore, DEFAULT_HOUSEHOLD } from '../households/scope.js';
-import { inviteEmail, alertEmail, testEmail } from './templates.js';
+import { inviteEmail, alertEmail, testEmail, resetEmail } from './templates.js';
 
 const AUDIENCE_ROLES = { family: ['family'], neighbour: ['neighbour'], everyone: ['family', 'neighbour'] };
 
@@ -58,6 +58,10 @@ export function createFamilyMail({ store, mailer, google = null, vault = null, p
         console.error(`invite email to ${member.email} failed:`, err.message);
         return { link, emailed: false, error: err.message };
       }
+    },
+
+    async sendPasswordReset({ to, name, token, minutes }) {
+      return mailer.send({ to, ...resetEmail({ name, minutes, link: `${publicUrl}/login.html?reset=${encodeURIComponent(token)}` }) });
     },
 
     async sendTest(householdId, { to, name }) {

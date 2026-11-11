@@ -14,6 +14,7 @@ const DEMO_ACCOUNTS = [
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_DAYS = 30;
 const PAIRING_MINUTES = 15;
+const RESET_MINUTES = 30;
 const PAIRING_EMOJI = ['🌻', '🐘', '🎈', '🍉', '🦋', '🚲', '🌙', '🐢', '🍋', '🎸', '🦜', '🌈', '🍪', '🐳', '🌵', '🎁', '🦊', '🍓', '🚀', '🐝', '🌷', '🥭', '🪁', '🐼', '⛵', '🍄', '🦚', '🔔', '🐠', '🍍', '🌼', '🧸'];
 
 export const normaliseEmail = (email) => String(email ?? '').trim().toLowerCase();
@@ -340,6 +341,40 @@ export function createAccounts({ store, services, identity = null, demo = false,
       await rejectBreached(next);
       await store.update('accounts', email, { passwordHash: await hashPassword(next), passwordChangedAt: clock().toISOString() });
       return publicAccount(await store.get('accounts', email));
+    },
+
+    async startPasswordReset(rawEmail) {
+      const email = normaliseEmail(rawEmail);
+      if (!EMAIL.test(email)) return null;
+      const account = await store.get('accounts', email);
+      if (!account || account.demo) return null;
+      if (!account.passwordHash) {
+        if (identity?.sendPasswordReset && account.provider === identity.kind) await identity.sendPasswordReset(email).catch(() => {});
+        return null;
+      }
+      for (const old of await store.list('passwordResets')) if (old.email === email) await store.remove('passwordResets', old.id);
+      const token = randomBytes(32).toString('base64url');
+      const expiresAt = new Date(clock().getTime() + RESET_MINUTES * 60_000).toISOString();
+      await store.put('passwordResets', { id: hashToken(token), email, expiresAt, createdAt: clock().toISOString() });
+      return { token, email, name: account.name ?? null, minutes: RESET_MINUTES };
+    },
+
+    async finishPasswordReset(token, next) {
+      const id = hashToken(String(token ?? ''));
+      const reset = token ? await store.get('passwordResets', id) : null;
+      if (!reset || Date.parse(reset.expiresAt) < clock().getTime()) {
+        if (reset) await store.remove('passwordResets', id);
+        throw new AuthError('reset', 'This reset link has expired or was already used. Ask for a new one.');
+      }
+      const account = await store.get('accounts', reset.email);
+      if (!account) throw new AuthError('reset', 'This reset link has expired or was already used. Ask for a new one.');
+      const problem = passwordProblem(next, { email: reset.email, name: account.name });
+      if (problem) throw new AuthError('password', problem);
+      await rejectBreached(next);
+      await store.remove('passwordResets', id);
+      await store.update('accounts', reset.email, { passwordHash: await hashPassword(next), passwordChangedAt: clock().toISOString() });
+      await throttleClear(reset.email);
+      return publicAccount(await store.get('accounts', reset.email));
     },
 
     raw: (email) => store.get('accounts', normaliseEmail(email)),
