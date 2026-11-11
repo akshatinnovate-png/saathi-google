@@ -50,7 +50,7 @@ Name: "{group}\Stop Saathi"; Filename: "{app}\saathi.exe"; Parameters: "--stop";
 Name: "{group}\Lock the key into this computer"; Filename: "{app}\saathi.exe"; Parameters: "--protect-key"; IconFilename: "{app}\saathi.ico"
 Name: "{group}\Restore the key from a recovery key"; Filename: "{app}\saathi.exe"; Parameters: "--restore-key"; IconFilename: "{app}\saathi.ico"
 Name: "{group}\Reach Saathi from anywhere"; Filename: "{app}\saathi.exe"; Parameters: "--reach"; IconFilename: "{app}\saathi.ico"
-Name: "{group}\Where is my key?"; Filename: "{app}\saathi.exe"; Parameters: "--key-status"; IconFilename: "{app}\saathi.ico"
+Name: "{group}\Where is my key"; Filename: "{app}\saathi.exe"; Parameters: "--key-status"; IconFilename: "{app}\saathi.ico"
 Name: "{group}\Saathi data folder"; Filename: "{localappdata}\Saathi"
 Name: "{group}\Uninstall Saathi"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\Saathi"; Filename: "{app}\saathi.exe"; IconFilename: "{app}\saathi.ico"; Tasks: desktopicon
@@ -75,6 +75,7 @@ begin
   if FileExists(ExpandConstant('{app}\saathi.exe')) then
     Exec(ExpandConstant('{app}\saathi.exe'), '--stop', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM Sahay.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), '-NoProfile -NonInteractive -Command "Get-Process | Where-Object { $_.Path -like ''' + ExpandConstant('{app}') + '\*'' } | Stop-Process -Force"', '', SW_HIDE, ewWaitUntilTerminated, Code);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
