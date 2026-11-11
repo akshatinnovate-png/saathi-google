@@ -114,6 +114,25 @@ export function mountAuth(app, { config, accounts, sessions, security = null, go
     res.json({ sent: true });
   }));
 
+  app.post('/auth/forgot', wrap(async (req, res) => {
+    const email = String(req.body?.email ?? '').trim().toLowerCase().slice(0, 254);
+    if (rateLimited(`forgot:${req.ip}`, 5) || rateLimited(`forgot:${email}`, 3, 15 * 60_000)) throw new AuthError('limit', 'Too many attempts. Please wait a few minutes.');
+    const reset = await accounts.startAccountRecovery(email);
+    if (reset && familyMail?.sendPasswordReset) {
+      familyMail.sendPasswordReset({ to: reset.email, name: reset.name, token: reset.token, minutes: reset.minutes }).catch((err) => console.error('password reset email failed', err.message));
+      log(req, 'password-reset-requested', { actor: reset.email });
+    }
+    res.json({ sent: true });
+  }));
+
+  app.post('/auth/reset', wrap(async (req, res) => {
+    if (rateLimited(`reset:${req.ip}`, 10)) throw new AuthError('limit', 'Too many attempts. Please wait a minute.');
+    const account = await accounts.finishAccountRecovery(req.body?.token, req.body?.password);
+    await sessions.revokeWhere((s) => s.kind === 'user' && s.email === account.email);
+    log(req, 'password-reset', { householdId: account.householdId, actor: account.email });
+    res.json({ reset: true, email: account.email });
+  }));
+
   app.post('/auth/login', wrap(async (req, res) => {
     const { email, password, next, invite } = req.body ?? {};
     if (rateLimited(`login:${req.ip}:${String(email).toLowerCase()}`)) throw new AuthError('limit', 'Too many attempts. Please wait a minute.');

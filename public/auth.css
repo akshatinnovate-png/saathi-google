@@ -157,3 +157,6 @@ label.inline { border: 0; padding: 0; }
 .w-skip { margin: 0; text-align: center; font-size: 0.9rem; }
 .w-skip a { color: #4b5366; }
 .w-gmail .muted { margin: 0; font-size: 0.85rem; color: #5f636b; }
+
+.auth-forgot { justify-self: end; margin-top: 6px; font-size: 0.9rem; color: inherit; text-decoration: underline; text-underline-offset: 3px; min-height: 32px; display: inline-flex; align-items: center; }
+.auth-forgot[hidden] { display: none; }

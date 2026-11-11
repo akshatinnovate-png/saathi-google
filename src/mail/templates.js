@@ -81,3 +81,16 @@ export function testEmail({ name, link }) {
   };
   return { subject: 'Saathi email test', html: layout({ ...copy, preheader: copy.paragraphs[0] }), text: toText(copy) };
 }
+
+export function resetEmail({ name, link, minutes }) {
+  const copy = {
+    heading: 'Choose a new Saathi password',
+    paragraphs: [
+      `Hi${name ? ` ${name}` : ''}, someone asked to reset the password for your Saathi account. If it was you, choose a new password with the button below. The link works once, for ${minutes} minutes.`,
+      'If you did not ask for this, you can ignore this email; your password stays the same.',
+    ],
+    button: { label: 'Choose a new password', href: link, fallback: 'Or open this link:' },
+    footer: 'Saathi will never ask you for your password by email or phone.',
+  };
+  return { subject: 'Reset your Saathi password', html: layout({ ...copy, preheader: copy.paragraphs[0] }), text: toText(copy) };
+}

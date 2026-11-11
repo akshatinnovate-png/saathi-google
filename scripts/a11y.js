@@ -61,6 +61,8 @@ const scenarios = [
   { name: 'Landing page, phone width', path: '/', width: 390, intro: false },
   { name: 'Login', path: '/login.html' },
   { name: 'Login, two-step code', path: '/login.html?step=code' },
+  { name: 'Login, forgot password', path: '/login.html#forgot' },
+  { name: 'Login, choose a new password', path: '/login.html?reset=example-token' },
   { name: 'Family Circle app', path: '/family.html' },
   { name: 'Family Circle app, high contrast', path: '/family.html', contrast: true },
   { name: 'Family Circle app, phone width', path: '/family.html', width: 390 },
