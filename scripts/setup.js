@@ -106,8 +106,15 @@ if (brain === 3) {
   Object.assign(values, { SAATHI_GOOGLE_TRANSLATE: 'true', SAATHI_GOOGLE_LANGUAGE: 'true', SAATHI_GOOGLE_TTS: 'true' });
 }
 
-rl.close();
+const windowsApp = process.env.SAATHI_PAUSE === '1';
 const lines = ['# Written by npm run setup. Keep this file private.', ...Object.entries(values).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => `${k}=${/[\s#"'=]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v}`)];
 writeFileSync(envFile, `${lines.join('\n')}\n`, { mode: 0o600 });
-console.log(`\n  Saved. Now run:  npm start`);
-console.log(`  Then open ${site()} and tap "Continue with Google".\n`);
+if (windowsApp) {
+  console.log('\n  Saved. Saathi stops now so it can pick up the new settings.');
+  console.log('  Open Saathi again from the Start menu and it will use them.\n');
+  await ask('  Press Enter to close this window');
+} else {
+  console.log(`\n  Saved. Now run:  npm start`);
+  console.log(`  Then open ${site()} and tap "Continue with Google".\n`);
+}
+rl.close();

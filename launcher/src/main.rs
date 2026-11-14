@@ -319,12 +319,19 @@ fn main() -> ExitCode {
         Some("--restore-key") => key_tool(&layout, "restore"),
         Some("--key-status") => key_tool(&layout, "status"),
         Some("--reach") => console_tool(&layout, "scripts/reach.js", ""),
+        Some("--setup") => {
+            let code = console_tool(&layout, "scripts/setup.js", "");
+            if code == ExitCode::SUCCESS {
+                let _ = stop(&layout);
+            }
+            code
+        }
         Some("--version") => {
             println!("saathi {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("unknown option {other}; use --background, --stop, --protect-key, --restore-key, --key-status, --reach or --version");
+            eprintln!("unknown option {other}; use --background, --stop, --setup, --protect-key, --restore-key, --key-status, --reach or --version");
             ExitCode::from(64)
         }
     }

@@ -1,6 +1,6 @@
 {
   "name": "saathi-google",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Saathi on Google: an elder-care companion with Gemini, Firestore, Cloud Translation, Natural Language, Text-to-Speech, Pub/Sub, Cloud Storage, Maps and Firebase Authentication, plus Saathi Didis, paid neighbourhood care work for women.",
   "main": "src/index.js",
   "bin": {

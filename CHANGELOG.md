@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.2] - 2026-11-14
+
+### Set up email and AI from the Start menu
+- A new **"Set up email and AI"** shortcut in the Windows Start menu (also `saathi.exe --setup`) asks for a Gmail address and app password (or another email provider) and a Gemini API key. Keys are typed hidden and saved only on this computer.
+- When it finishes, Saathi stops so the next start uses the new settings: invites, help alerts and "Forgot password?" emails then reach real inboxes, and Gemini powers the assistants.
+
 ## [1.4.1] - 2026-11-11
 
 ### Windows installer fixes
